@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -2816,6 +2816,7 @@ class Renderer {
   }
 }
 //=== ui.mjs ===
+﻿import { ELEMENT_DEFS, getElementRank } from './engine.mjs';
 
 class UI {
   constructor(game) {
@@ -2826,6 +2827,7 @@ class UI {
     this._dirty = {};
     this.transSystemShapeDef = null;
     this.upgradeSelected = false;
+    this.pendingUpgradeKey = null;
   }
 
   localizeDOM() {
@@ -3105,6 +3107,7 @@ class UI {
     this.transCallback = nextCallback;
     this.transSystemShapeDef = null;
     this.upgradeSelected = false;
+    this.pendingUpgradeKey = null;
     const title = document.getElementById('transTitle');
     const desc = document.getElementById('transDesc');
     const options = document.getElementById('transShapeOptions');
@@ -3292,6 +3295,8 @@ class UI {
     this.showOverlay('gameOverOverlay');
   }
 }
+
+
 //=== game.mjs ===
 
 const OBJECTIVES = [
@@ -4117,13 +4122,6 @@ class CyclusPrime {
         : AI_PERSONALITIES[0];
       this.layerScars = data.layerScars ? { ...data.layerScars } : {};
       this.lastPlayerVertices = Array.isArray(data.lastPlayerVertices) ? [...data.lastPlayerVertices] : [];
-      if (!this.gameOver && this.shouldResolveLayer()) {
-        setTimeout(() => {
-          if (this.running && !this.gameOver && this.shouldResolveLayer()) {
-            this.handleLayerEnd();
-          }
-        }, 0);
-      }
       return true;
     } catch (_) { return false; }
   }
@@ -4193,13 +4191,3 @@ window.addEventListener("DOMContentLoaded", function() {
   </script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
