@@ -1,0 +1,3 @@
+Copyright © 2026 Zak Sam. All rights reserved.
+
+This software and associated materials are proprietary. You may play the published demo for personal evaluation and testing only. You may not copy, modify, redistribute, sell, sublicense, extract, reverse engineer, or reuse any part of the source code, formulas, artwork, design, text, or gameplay implementation without prior written permission.
