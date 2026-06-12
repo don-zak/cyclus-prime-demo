@@ -2998,7 +2998,8 @@ class UI {
       if (!this.transCallback) return;
       const cb = this.transCallback;
       const choice = this.transSystemShapeDef || 'skip';
-      this.transCallback = null; this.transSystemShapeDef = null; this.upgradeSelected = false;
+      if (this.pendingUpgradeKey && this.game) this.game.applyUpgrade(this.pendingUpgradeKey);
+      this.transCallback = null; this.transSystemShapeDef = null; this.upgradeSelected = false; this.pendingUpgradeKey = null;
       this.hideOverlay('layerTransitionOverlay');
       cb(choice);
     });
@@ -3008,20 +3009,27 @@ class UI {
       const idx = parseInt(btn.dataset.idx, 10);
       if (!isNaN(idx) && SHAPE_DEFS[idx]) {
         const cb = this.transCallback;
-        this.transCallback = null; this.transSystemShapeDef = null; this.upgradeSelected = false;
+        if (this.pendingUpgradeKey && this.game) this.game.applyUpgrade(this.pendingUpgradeKey);
+        this.transCallback = null; this.transSystemShapeDef = null; this.upgradeSelected = false; this.pendingUpgradeKey = null;
         this.hideOverlay('layerTransitionOverlay');
         cb(SHAPE_DEFS[idx]);
       }
     });
     document.getElementById('transUpgradeOptions')?.addEventListener('click', (e) => {
       const btn = e.target.closest('.upgrade-option');
-      if (!btn || !this.game || this.upgradeSelected) return;
+      if (!btn || !this.game) return;
       const key = btn.dataset.upgrade;
-      if (this.game.applyUpgrade(key)) {
-        this.upgradeSelected = true;
-        for (const child of btn.parentElement.children) child.disabled = true;
-        btn.classList.add('selected');
+      if (!key) return;
+      if (this.pendingUpgradeKey === key) {
+        this.pendingUpgradeKey = null;
+        this.upgradeSelected = false;
+        btn.classList.remove('selected');
+        return;
       }
+      this.pendingUpgradeKey = key;
+      this.upgradeSelected = true;
+      for (const child of btn.parentElement.children) child.classList.remove('selected');
+      btn.classList.add('selected');
     });
   }
 
@@ -4185,6 +4193,11 @@ window.addEventListener("DOMContentLoaded", function() {
   </script>
 </body>
 </html>
+
+
+
+
+
 
 
 
