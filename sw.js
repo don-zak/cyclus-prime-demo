@@ -1,6 +1,6 @@
-// CYCLUS Prime Service Worker — for the built public demo only (dist/index.html or github_public_demo/)
+﻿// CYCLUS Prime Service Worker — for the built public demo only (dist/index.html or github_public_demo/)
 // Does NOT cache js/ or css/ source files. Use the standalone dist/index.html for offline play.
-const CYCLUS_CACHE = 'cyclus-prime-v3-7-1';
+const CYCLUS_CACHE = 'cyclus-prime-v3-7-1-fixed-20260612';
 const CORE_ASSETS = ['./index.html', './manifest.webmanifest', './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png'];
 
 self.addEventListener('install', event => {
@@ -21,3 +21,4 @@ self.addEventListener('fetch', event => {
     return response;
   }).catch(() => caches.match(event.request).then(cached => cached || caches.match('./index.html'))));
 });
+
