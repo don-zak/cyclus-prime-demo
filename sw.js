@@ -1,24 +1,4182 @@
-﻿// CYCLUS Prime Service Worker — for the built public demo only (dist/index.html or github_public_demo/)
-// Does NOT cache js/ or css/ source files. Use the standalone dist/index.html for offline play.
-const CYCLUS_CACHE = 'cyclus-prime-v3-7-1-fixed-20260612';
-const CORE_ASSETS = ['./index.html', './manifest.webmanifest', './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png'];
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0a0a1a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>CYCLUS Prime — Genome Conflict</title>
+  <link rel="icon" href="data:,">
+  <link rel="manifest" href="manifest.webmanifest">
+  <style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  width: 100%; height: 100%; overflow: hidden;
+  background: #0a0a1a;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: #d0d0e0;
+  user-select: none; -webkit-user-select: none;
+  touch-action: none;
+}
+#gameCanvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+.header-actions { display: flex; gap: 6px; align-items: center; justify-content: flex-end; margin-top: 4px; }
+#menuBtn, .close-btn { background: rgba(255,255,255,0.03); color: #d0d0e0; border: 1px solid rgba(255,255,255,0.14); border-radius: 7px; padding: 3px 8px; font-size: 11px; cursor: pointer; letter-spacing: .5px; transition: all .2s ease; }
+#menuBtn:hover, .close-btn:hover { color: #00ffaa; border-color: rgba(0,255,170,.45); background: rgba(0,255,170,.06); }
+#gameCanvas:active { cursor: grabbing; }
 
-self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CYCLUS_CACHE).then(cache => cache.addAll(CORE_ASSETS)).catch(() => undefined));
-  self.skipWaiting();
+#loadingScreen {
+  position: fixed; inset: 0; background: #0a0a1a;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  z-index: 1000; transition: opacity 0.8s ease;
+}
+#loadingScreen.hidden { opacity: 0; pointer-events: none; }
+.loading-pulse {
+  width: 60px; height: 60px;
+  border: 2px solid #00d4aa33; border-top-color: #00d4aa;
+  border-radius: 50%; animation: spin 1.2s linear infinite;
+  margin-bottom: 24px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-title { color: #00d4aa; font-size: 22px; letter-spacing: 6px; font-weight: 300; margin-bottom: 8px; }
+.loading-sub { color: #8888aa; font-size: 13px; letter-spacing: 2px; }
+
+#uiOverlay { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+#uiOverlay > * { pointer-events: auto; }
+
+.header-card {
+  position: absolute; top: 12px;
+  background: rgba(10, 10, 26, 0.85);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px; padding: 8px 12px;
+  font-size: 13px; z-index: 20;
+  width: fit-content;
+}
+
+#scoreCard { left: 12px; }
+#infoCard { right: 12px; }
+
+.score-counter {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  line-height: 1.3;
+}
+
+.player-score { color: #ffd700; }
+.system-score { color: #6c63ff; }
+
+#genomeBars { display: flex; flex-direction: column; gap: 3px; min-width: 100px; max-width: 160px; }
+.genome-row { display: flex; align-items: center; gap: 4px; }
+.genome-label { font-size: 9px; font-weight: 600; width: 36px; text-align: right; }
+.player-label { color: #ffd700; }
+.system-label { color: #6c63ff; }
+.genome-track {
+  flex: 1; height: 6px; background: rgba(255,255,255,0.06);
+  border-radius: 3px; overflow: hidden;
+}
+.genome-fill { height: 100%; border-radius: 3px; transition: width 0.4s ease; }
+.player-fill { background: linear-gradient(90deg, #ffd700, #ff8800); }
+.system-fill { background: linear-gradient(90deg, #6c63ff, #4466cc); }
+
+#topInfo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+#turnInfo { font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 4px; white-space: nowrap; }
+#phaseBadge {
+  font-size: 8px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+  border: 1px solid #00d4aa; color: #00d4aa;
+  border-radius: 6px; padding: 1px 6px; line-height: 1.5;
+  transition: border-color 0.6s ease, color 0.6s ease;
+  display: inline-block; width: fit-content;
+}
+#layerInfo { font-size: 9px; color: #8888aa; }
+#genomeDisplay { font-size: 9px; color: #c0c0d0; }
+
+#menuBtn {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: #ffffff; font-size: 18px; cursor: pointer;
+  border-radius: 6px; padding: 4px 10px; line-height: 1.2;
+  transition: all 0.2s;
+}
+#menuBtn:hover { background: rgba(0,212,170,0.15); border-color: #00d4aa; color: #00ffaa; }
+
+#vertexStatus {
+  position: absolute; bottom: 100px; right: 16px;
+  display: flex; flex-direction: column; gap: 6px; align-items: flex-end;
+}
+.vertex-bar { display: flex; align-items: center; gap: 6px; }
+.vlabel { font-size: 9px; color: #8888aa; width: 56px; text-align: right; }
+.vbar { width: 80px; height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden; }
+.vfill { height: 100%; width: 0%; border-radius: 3px; transition: all 0.4s ease; }
+.vowner { font-size: 10px; font-weight: 700; width: 12px; text-align: center; }
+
+#gameStatus {
+  position: absolute; bottom: 60px; left: 50%; transform: translateX(-50%);
+  font-size: 12px; color: #aaaacc;
+  background: rgba(10, 10, 26, 0.7);
+  padding: 6px 16px; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.06);
+  text-align: center; white-space: nowrap;
+}
+
+#elementPanel {
+  position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+  display: none;
+}
+#elementButtons { display: flex; gap: 10px; justify-content: center; }
+.elem-btn {
+  pointer-events: auto;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  background: rgba(10, 10, 26, 0.7);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px; padding: 10px 16px;
+  cursor: pointer; transition: all 0.25s ease;
+  animation: fadeUp 0.4s ease both; min-width: 60px;
+}
+.elem-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--elem-color);
+  transform: translateY(-2px);
+}
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.elem-circle {
+  width: 36px; height: 36px; border-radius: 50%; border: 2px solid;
+  display: flex; align-items: center; justify-content: center; transition: all 0.25s;
+}
+.rank-badge { font-size: 8px; color: #88ccff; background: rgba(10,10,26,0.7); border: 1px solid #88ccff44; border-radius: 4px; padding: 0 4px; line-height: 1.3; }
+.elem-label { font-size: 14px; font-weight: 700; color: #ffffff; }
+.elem-name { font-size: 10px; color: #c0c0d0; text-align: center; line-height: 1.1; }
+
+.overlay-screen {
+  position: fixed; inset: 0; background: rgba(10, 10, 26, 0.92);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  z-index: 100; transition: opacity 0.5s ease;
+}
+.overlay-screen.hidden { opacity: 0; pointer-events: none; }
+.overlay-inner { text-align: center; }
+.overlay-screen h2 { font-size: 22px; font-weight: 300; letter-spacing: 3px; margin-bottom: 16px; color: #00ffaa; }
+.overlay-screen p { font-size: 14px; color: #aaaacc; line-height: 1.5; max-width: 360px; margin-bottom: 24px; }
+.overlay-screen button {
+  background: transparent; border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #d0d0e0; padding: 10px 28px; border-radius: 8px;
+  font-size: 13px; letter-spacing: 1px; cursor: pointer; transition: all 0.25s;
+}
+.overlay-screen button:hover { background: rgba(255,255,255,0.04); border-color: #00d4aa66; color: #00d4aa; }
+.menu-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.menu-btn { min-width: 200px; text-align: center; }
+.help-text { font-size: 13px; color: #aaaacc; line-height: 1.6; padding: 0 8px; }
+.help-text p { margin-bottom: 8px; text-align: left; }
+.help-text kbd { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 1px 6px; font-size: 11px; color: #d0d0e0; }
+
+#shapeOptions {
+  display: flex; gap: 14px; justify-content: center; flex-wrap: wrap;
+  margin: 16px 0;
+}
+.shape-option {
+  width: 110px; padding: 18px 12px 14px; border-radius: 14px;
+  border: 2px solid rgba(255,255,255,0.12); cursor: pointer;
+  background: rgba(255,255,255,0.02);
+  transition: all 0.25s ease; text-align: center;
+  pointer-events: auto;
+}
+.shape-option:hover {
+  transform: translateY(-5px);
+  border-color: var(--shape-color);
+  background: rgba(255,255,255,0.05);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+.shape-icon {
+  width: 36px; height: 36px; margin: 0 auto 6px;
+  background: var(--shape-color); opacity: 0.85;
+}
+.shape-triangle { clip-path: polygon(50% 0%, 0% 100%, 100% 100%); }
+.shape-square { clip-path: polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%); }
+.shape-pentagon { clip-path: polygon(50% 0%, 100% 38%, 81% 100%, 19% 100%, 0% 38%); }
+.shape-hexagon { clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%); }
+.shape-cube { clip-path: polygon(18% 18%, 72% 18%, 88% 34%, 88% 88%, 34% 88%, 18% 72%); }
+.shape-cuboid { clip-path: polygon(10% 24%, 76% 24%, 92% 40%, 92% 78%, 26% 78%, 10% 62%); }
+.shape-label { font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #e0e0f0; }
+.shape-info { font-size: 11px; color: #8888aa; margin-top: 2px; }
+.shape-mult { font-size: 12px; font-weight: 700; color: var(--shape-color); margin-top: 6px; }
+.shape-hint { font-size: 11px; color: #555577; margin-top: 8px; }
+
+.notification {
+  position: fixed; top: 70px; left: 50%;
+  transform: translateX(-50%) translateY(-20px);
+  background: rgba(10, 10, 26, 0.8); backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,0.08); border-radius: 10px;
+  padding: 10px 20px; font-size: 13px; color: #d0d0e0;
+  z-index: 50; opacity: 0; transition: all 0.4s ease; pointer-events: none; white-space: nowrap;
+}
+.notification.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+@media (max-width: 700px) {
+  .header-card { padding: 6px 8px; }
+  #scoreCard { left: 8px; }
+  #infoCard { right: 8px; }
+  .score-counter { font-size: 14px; }
+  #genomeBars { min-width: 70px; max-width: 100px; }
+}
+@media (max-width: 520px) {
+  .header-card { padding: 4px 6px; }
+  #scoreCard { left: 6px; }
+  #infoCard { right: 6px; }
+  .score-counter { font-size: 12px; }
+  #genomeBars { min-width: 50px; max-width: 70px; }
+  .genome-label { width: 28px; font-size: 8px; }
+  .genome-track { height: 4px; }
+  #turnInfo { font-size: 9px; }
+  #phaseBadge { font-size: 7px; padding: 0 4px; }
+  #menuBtn { font-size: 13px; padding: 1px 5px; }
+  .elem-btn { padding: 6px 10px; min-width: 44px; }
+  .elem-circle { width: 26px; height: 26px; }
+  .elem-label { font-size: 11px; }
+  .elem-name { font-size: 8px; }
+  .rank-badge { font-size: 7px; }
+  .vbar { width: 60px; }
+}
+
+#movePreview {
+  position: absolute; bottom: 108px; left: 50%; transform: translateX(-50%) translateY(8px);
+  min-width: 260px; max-width: min(520px, calc(100vw - 32px));
+  background: rgba(10, 10, 26, 0.88); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 215, 0, 0.25); border-radius: 12px; padding: 10px 14px;
+  box-shadow: 0 12px 35px rgba(0,0,0,0.35); color: #dfe8ff; font-size: 12px;
+  opacity: 0; pointer-events: none; transition: opacity 0.2s ease, transform 0.2s ease;
+  text-align: center;
+}
+#movePreview.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+#movePreview b { display: block; color: #ffd700; letter-spacing: 0.8px; margin-bottom: 3px; }
+#movePreview span, #movePreview small { display: block; line-height: 1.35; color: #aeb6df; }
+#movePreview small:last-child { color: #8fddee; }
+.velem { font-size: 10px; font-weight: 700; color: #e8e8ff; width: 14px; text-align: center; }
+.vertex-bar { outline: 1px solid transparent; outline-offset: 3px; border-radius: 6px; transition: outline-color 0.2s ease, opacity 0.2s ease; }
+@media (max-width: 520px) {
+  #movePreview { bottom: 92px; font-size: 11px; min-width: 220px; }
+}
+
+#transDesc { max-width: 520px; margin-bottom: 12px; }
+#transDesc b { color: #ffffff; }
+#transDesc br + b { color: #ffffff; }
+
+.trans-section { margin: 12px 0; }
+.trans-divider { font-size: 10px; color: #555577; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px; }
+
+#transShapeOptions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+#transShapeOptions .shape-option {
+  width: 90px; padding: 12px 8px 10px; border-radius: 12px;
+  border: 2px solid rgba(255,255,255,0.12); cursor: pointer;
+  background: rgba(255,255,255,0.02);
+  transition: all 0.25s ease; text-align: center; pointer-events: auto;
+}
+#transShapeOptions .shape-option:hover {
+  transform: translateY(-3px);
+  border-color: var(--shape-color);
+  background: rgba(255,255,255,0.05);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+}
+#transShapeOptions .shape-icon { width: 28px; height: 28px; margin: 0 auto 4px; background: var(--shape-color); opacity: 0.85; }
+#transShapeOptions .shape-label { font-size: 10px; font-weight: 700; letter-spacing: 1px; color: #e0e0f0; }
+#transShapeOptions .shape-info { font-size: 10px; color: #8888aa; }
+#transShapeOptions .shape-mult { font-size: 11px; font-weight: 700; color: var(--shape-color); margin-top: 4px; }
+
+.trans-system-choice { font-size: 18px; font-weight: 700; color: #6c63ff; letter-spacing: 2px; padding: 12px 0; }
+
+#transSkipBtn { margin-top: 8px; min-width: 160px; }
+
+.help-toggle {
+  margin-top: 14px; font-size: 12px; color: #8888aa; cursor: pointer;
+  user-select: none; transition: color 0.2s;
+}
+.help-toggle:hover { color: #d0d0e0; }
+
+.help-card {
+  max-height: 0; overflow: hidden; transition: max-height 0.4s ease, margin 0.3s ease;
+  margin: 0 auto; width: 100%; max-width: 420px;
+}
+.help-card.open { max-height: 400px; margin: 10px auto; }
+.help-text { font-size: 12px; color: #aaaacc; line-height: 1.6; text-align: left; padding: 8px 12px; }
+.help-text p { margin-bottom: 6px; text-align: left; }
+
+.lang-bar { display: flex; gap: 6px; justify-content: center; padding: 8px 0 4px; }
+.lang-btn {
+  width: 32px; height: 24px; font-size: 11px; font-weight: 700;
+  border: 1px solid rgba(255,255,255,0.15); border-radius: 4px;
+  background: transparent; color: #8888aa; cursor: pointer;
+  transition: all 0.2s; line-height: 1; padding: 0;
+}
+.lang-btn:hover { border-color: #00d4aa66; color: #d0d0e0; }
+.lang-btn.active { border-color: #00d4aa; color: #00d4aa; background: rgba(0,212,170,0.1); }
+
+.help-skip-btn { margin: 6px auto 0; display: block; font-size: 11px; padding: 6px 20px; }
+
+
+.start-inner { max-width: 520px; }
+.start-inner h1 { margin: 6px 0 10px; font-size: 46px; letter-spacing: 10px; font-weight: 200; color: #00ffaa; text-shadow: 0 0 24px #00ffaa55; }
+.start-kicker { font-size: 11px; letter-spacing: 4px; color: #ffd700; opacity: 0.85; }
+.start-subtitle { max-width: 480px !important; margin: 0 auto 18px !important; color: #d6d6f0 !important; }
+.start-rules { display: grid; gap: 10px; margin: 18px auto 22px; max-width: 460px; text-align: left; }
+.start-rules div { display: grid; grid-template-columns: 32px 1fr; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid rgba(255,255,255,0.10); background: rgba(255,255,255,0.035); border-radius: 12px; }
+.start-rules b { width: 26px; height: 26px; display: inline-grid; place-items: center; border-radius: 50%; border: 1px solid #00ffaa77; color: #00ffaa; font-weight: 500; }
+.start-rules span { color: #aaaacc; font-size: 13px; line-height: 1.35; }
+.primary-start { border-color: #00ffaa88 !important; color: #00ffaa !important; min-width: 180px; }
+
+/* v3.5 market launch additions */
+#objectiveDisplay { font-size: 9px; color: #00d4aa; max-width: 360px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#upgradeDisplay { font-size: 8px; color: #8888aa; max-width: 360px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#affixBadge { font-size: 9px; color: #ff88aa; max-width: 240px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#aiPersonalityDisplay { font-size: 8px; color: #aa88ff; max-width: 240px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#elementRankDisplay { font-size: 8px; color: #88ccff; max-width: 360px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#feedbackStack {
+  position: fixed; top: 84px; left: 50%; transform: translateX(-50%);
+  z-index: 55; display: flex; flex-direction: column; gap: 8px;
+  align-items: center; pointer-events: none;
+}
+.feedback-item {
+  opacity: 0; transform: translateY(-12px) scale(0.98);
+  background: rgba(10,10,26,0.84); border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 999px; padding: 8px 16px; color: #d8d8f0; font-size: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.35); backdrop-filter: blur(10px);
+  transition: all 0.32s ease; max-width: min(520px, 92vw); text-align: center;
+}
+.feedback-item.visible { opacity: 1; transform: translateY(0) scale(1); }
+.feedback-item.good { border-color: #00ffaa66; color: #bfffea; }
+.feedback-item.warn { border-color: #ffd70077; color: #ffeaa0; }
+.feedback-item.danger { border-color: #ff446677; color: #ffb2c1; }
+.feedback-item.info { border-color: #6c63ff77; color: #d5d3ff; }
+.tutorial-hint {
+  position: absolute; left: 18px; bottom: 112px; width: min(340px, calc(100vw - 36px));
+  background: rgba(10,10,26,0.86); border: 1px solid rgba(0,255,170,0.28);
+  border-radius: 14px; padding: 12px 14px; box-shadow: 0 12px 34px rgba(0,0,0,0.36);
+  backdrop-filter: blur(12px); color: #d0d0e0;
+}
+.tutorial-hint.hidden { display: none; }
+.tutorial-kicker { font-size: 10px; letter-spacing: 2px; color: #00ffaa; text-transform: uppercase; margin-bottom: 5px; }
+#tutorialText { font-size: 13px; line-height: 1.45; color: #d8d8ee; margin-bottom: 8px; }
+#tutorialSkipBtn { font-size: 11px; color: #8888aa; background: transparent; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 5px 10px; cursor: pointer; }
+#tutorialSkipBtn:hover { color: #00ffaa; border-color: #00ffaa77; }
+.start-actions { display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap; }
+.secondary-start { min-width: 130px; color: #aaaacc !important; }
+#transUpgradeOptions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin: 10px 0 8px; }
+.upgrade-option {
+  width: 150px; min-height: 78px; padding: 10px; display: flex; flex-direction: column; gap: 5px;
+  border-radius: 12px !important; border-color: rgba(255,215,0,0.22) !important;
+  background: rgba(255,215,0,0.035) !important; text-align: left !important;
+}
+.upgrade-option b { color: #ffd700; font-size: 12px; letter-spacing: 0.5px; }
+.upgrade-option span { color: #aaaacc; font-size: 11px; line-height: 1.3; }
+.upgrade-option.selected { border-color: #00ffaa !important; background: rgba(0,255,170,0.08) !important; }
+.upgrade-option:disabled { cursor: default; opacity: 0.70; }
+.good-text { color: #00ffaa; }
+.warn-text { color: #ffd700; }
+@media (max-width: 700px) {
+  #objectiveDisplay, #upgradeDisplay { max-width: 90vw; }
+  #feedbackStack { top: 126px; }
+  .tutorial-hint { bottom: 132px; }
+  .upgrade-option { width: 132px; }
+}
+
+
+.close-inner { max-width: 520px; padding: 26px 30px; border: 1px solid rgba(0, 255, 170, 0.18); border-radius: 20px; background: radial-gradient(circle at top, rgba(0,255,170,0.10), rgba(10,10,26,0.72)); box-shadow: 0 22px 80px rgba(0,0,0,.45); }
+.close-mark { width: 54px; height: 54px; margin: 0 auto 12px; border: 1px solid rgba(0,255,170,.35); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #00ffaa; font-size: 28px; text-shadow: 0 0 18px rgba(0,255,170,.55); animation: closeSeedPulse 2.4s ease-in-out infinite; }
+.close-motto { color: #00ffaa !important; font-size: 19px !important; letter-spacing: 1.5px; margin-bottom: 8px !important; }
+.close-desc { color: #aaaacc !important; margin-bottom: 18px !important; }
+.close-menu-btn { border-color: rgba(0,255,170,.28) !important; color: #bfffee !important; }
+@keyframes closeSeedPulse { 0%, 100% { transform: scale(1); opacity: .82; } 50% { transform: scale(1.08); opacity: 1; } }
+
+</style>
+</head>
+<body>
+  <div id="loadingScreen">
+    <div class="loading-pulse"></div>
+    <div class="loading-title" data-i18n="startTitle">CYCLUS</div>
+    <div class="loading-sub" data-i18n="loadingSub">Core shapes from start · advanced cubic mode later</div>
+    <div style="position:fixed;bottom:8px;right:12px;font-size:10px;color:#333;z-index:1001" data-i18n="version">v3.7.1-github-split-public-formula-hiding</div>
+  </div>
+
+  <canvas id="gameCanvas"></canvas>
+
+  <div id="uiOverlay">
+    <div id="scoreCard" class="header-card">
+      <div id="playerScoreDisplay" class="score-counter player-score">P 0.00</div>
+      <div id="systemScoreDisplay" class="score-counter system-score">S 0.00</div>
+    </div>
+    <div id="infoCard" class="header-card">
+      <div id="genomeBars">
+        <div class="genome-row">
+          <span class="genome-label player-label" id="headerPlayerLabel">You</span>
+          <div class="genome-track"><div id="playerGenomeFill" class="genome-fill player-fill"></div></div>
+        </div>
+        <div class="genome-row">
+          <span class="genome-label system-label" id="headerSystemLabel">System</span>
+          <div class="genome-track"><div id="systemGenomeFill" class="genome-fill system-fill"></div></div>
+        </div>
+      </div>
+      <div id="topInfo">
+        <span id="turnInfo">Turn 0 | Your turn</span>
+        <span id="phaseBadge">Triangle</span>
+        <span id="layerInfo">Layer 0 (0/3)</span>
+        <span id="pressureDisplay">Pressure: 3 left</span>
+        <span id="affixBadge" class="affix-badge"></span>
+        <span id="genomeDisplay">Genome: 0.50</span>
+        <span id="objectiveDisplay">Objective: survive the layer</span>
+        <span id="upgradeDisplay">Upgrades: none</span>
+        <span id="aiPersonalityDisplay" class="ai-personality"></span>
+        <span id="elementRankDisplay" class="element-rank-display"></span>
+      </div>
+      <div class="header-actions"><button id="closeBtn" class="close-btn" data-i18n="btnClose" title="Close">Close</button><button id="menuBtn">[=]</button></div>
+    </div>
+
+    <div id="vertexStatus"></div>
+
+    <div id="gameStatus">Click an empty vertex to select it</div>
+
+    <div id="movePreview"></div>
+
+      <div id="tutorialHint" class="tutorial-hint hidden">
+        <div class="tutorial-kicker" id="tutorialKicker" data-i18n="tutorialKicker">First minute</div>
+        <div id="tutorialText">Select an empty vertex.</div>
+        <button id="tutorialSkipBtn" data-i18n="skip">Skip tutorial</button>
+      </div>
+
+    <div id="feedbackStack"></div>
+
+    <div id="elementPanel">
+      <div id="elementButtons"></div>
+    </div>
+  </div>
+
+
+  <div class="overlay-screen" id="startOverlay">
+    <div class="overlay-inner start-inner">
+      <div class="start-kicker" data-i18n="startKicker">GENOME CONFLICT</div>
+      <h1 data-i18n="startTitle">CYCLUS</h1>
+      <p class="start-subtitle" data-i18n="startSubtitle">A symbolic strategy game where every move reshapes a living genome — and losing lets you choose the next battlefield.</p>
+      <div class="start-rules">
+        <div><b>1</b><span data-i18n="startRule1">Select an empty vertex.</span></div>
+        <div><b>2</b><span data-i18n="startRule2">Choose H/F/S/C/B. Hover first to preview the score shift.</span></div>
+        <div><b>3</b><span data-i18n="startRule3">Triangle, Square, Pentagon, and Hexagon are available from the start.</span></div>
+        <div><b>4</b><span data-i18n="startRule4">Advanced play unlocks Cube and Cuboid battlefields.</span></div>
+        <div><b>5</b><span data-i18n="startRule5">Cycle Pressure resolves long or undecided layers before they drag on.</span></div>
+      </div>
+      <div class="start-actions">
+        <button id="startPlayBtn" class="menu-btn primary-start" data-i18n="btnStartCycle">Start Cycle</button>
+        <button id="startHowBtn" class="menu-btn secondary-start" data-i18n="btnHowToPlay">How to Play</button>
+        <button id="startAudioBtn" class="menu-btn secondary-start">♪ Sound On</button>
+        <button id="startResetBtn" class="menu-btn secondary-start" data-i18n="btnResetSave">Reset Save</button>
+        <button id="startCloseBtn" class="menu-btn secondary-start close-menu-btn" data-i18n="btnClose">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay-screen hidden" id="layerTransitionOverlay">
+    <div class="overlay-inner">
+      <h2 id="transTitle">Layer Complete</h2>
+      <p id="transDesc"></p>
+
+      <div id="transUpgradePanel" class="trans-section hidden">
+        <div class="trans-divider" data-i18n="transDivObjective">Objective Reward</div>
+        <div id="transUpgradeOptions"></div>
+      </div>
+
+      <div id="transShapeSection" class="trans-section">
+        <div class="trans-divider" data-i18n="transDivShape">Next Shape</div>
+        <div id="transShapeOptions"></div>
+        <div id="transSystemChoice" class="trans-system-choice hidden" data-i18n="transSystemChoice"></div>
+      </div>
+
+      <button id="transSkipBtn" class="menu-btn" data-action="skip" data-i18n="skip">Skip</button>
+
+      <div class="help-toggle" id="helpToggle"><span data-i18n="helpToggle">[?] How to Play</span></div>
+    </div>
+  </div>
+
+  <div class="overlay-screen hidden" id="helpOverlay">
+    <div class="overlay-inner">
+      <div class="help-card open" id="helpCard">
+        <div class="lang-bar" id="langBar"></div>
+        <div class="help-text" id="helpText"></div>
+        <button class="menu-btn help-skip-btn" id="helpSkipBtn" data-i18n="skip">Skip</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay-screen hidden" id="gameOverOverlay">
+    <div class="overlay-inner">
+      <h2 id="gameOverTitle">Game Over</h2>
+      <p id="gameOverDesc"></p>
+      <button class="menu-btn" data-action="restart" data-i18n="btnPlayAgain">[~] Play Again</button>
+    </div>
+  </div>
+
+  <div class="overlay-screen hidden" id="menuOverlay">
+    <div class="overlay-inner">
+      <h2 data-i18n="pauseTitle">[||] Paused</h2>
+      <div class="menu-actions">
+        <button class="menu-btn" data-action="resume" data-i18n="btnResume">&gt; Resume</button>
+        <button class="menu-btn" data-action="how" data-i18n="btnHowToPlay">? How to Play</button>
+        <button class="menu-btn" data-action="mute" data-i18n="btnMuteAudio">♪ Toggle Audio</button>
+        <button class="menu-btn" data-action="restart" data-i18n="btnRestart">[~] Restart Game</button>
+        <button class="menu-btn close-menu-btn" data-action="close" data-i18n="btnClose">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay-screen hidden" id="closeOverlay" aria-live="polite">
+    <div class="overlay-inner close-inner">
+      <div class="close-mark">◌</div>
+      <h2 data-i18n="closeTitle">Cycle Closed</h2>
+      <p class="close-motto" data-i18n="everyEndSeed">Every end is a seed.</p>
+      <p class="close-desc" data-i18n="closeDesc">Progress saved. You can now close this tab, or return to the cycle.</p>
+      <div class="menu-actions">
+        <button class="menu-btn" data-action="return" data-i18n="btnReturn">Return</button>
+        <button class="menu-btn close-menu-btn" data-action="close-tab" data-i18n="btnCloseTab">Close Tab</button>
+      </div>
+    </div>
+  </div>
+
+
+  <script>
+// Standalone build for CYCLUS Prime v3.7.1
+//=== engine.mjs ===
+/**
+ * CYCLUS ENGINE V3.7.1 — Genome Conflict Advanced Core
+ * Portable, deterministic-friendly mechanics for shape evolution.
+ * v3.7.1: GitHub split, public formula-hiding, deterministic scoring, unified AI.
+ */
+
+const COMPAT_MATRIX = Object.freeze({
+  'H,H': 1.00, 'H,F': 0.55, 'H,S': 0.80, 'H,C': 0.18, 'H,B': 0.88,
+  'F,H': 0.55, 'F,F': 0.70, 'F,S': 0.38, 'F,C': 0.50, 'F,B': 0.60,
+  'S,H': 0.80, 'S,F': 0.38, 'S,S': 1.00, 'S,C': 0.10, 'S,B': 0.72,
+  'C,H': 0.18, 'C,F': 0.50, 'C,S': 0.10, 'C,C': 0.35, 'C,B': 0.28,
+  'B,H': 0.88, 'B,F': 0.60, 'B,S': 0.72, 'B,C': 0.28, 'B,B': 0.82,
 });
 
-self.addEventListener('activate', event => {
-  event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CYCLUS_CACHE).map(k => caches.delete(k)))));
-  self.clients.claim();
+const ELEMENT_DEFS = Object.freeze([
+  { key: 'H', name: 'Harmony',   role: 'stabilizes friendly patterns', color: '#00d4aa', nameKey: 'elemHarmony', roleKey: 'elemHarmonyRole' },
+  { key: 'F', name: 'Frequency', role: 'amplifies tempo and pressure', color: '#ffd700', nameKey: 'elemFrequency', roleKey: 'elemFrequencyRole' },
+  { key: 'S', name: 'Structure', role: 'anchors resilient control', color: '#6c63ff', nameKey: 'elemStructure', roleKey: 'elemStructureRole' },
+  { key: 'C', name: 'Chaos',     role: 'disrupts enemies with risk', color: '#ff4466', nameKey: 'elemChaos', roleKey: 'elemChaosRole' },
+  { key: 'B', name: 'Bridge',    role: 'connects weak matches safely', color: '#00d4ff', nameKey: 'elemBridge', roleKey: 'elemBridgeRole' },
+]);
+
+/* ---- Layer Affixes ---- */
+const AFFIX_DEFS = Object.freeze([
+  {
+    id: 'resonant',
+    label: 'Resonant',
+    desc: 'High compatibility scores (>0.80) are doubled.',
+    labelKey: 'affixResonant', descKey: 'affixResonantDesc',
+    modifyScore(score, element, vertexKey, layer) { return score; },
+  },
+  {
+    id: 'volatile',
+    label: 'Volatile',
+    desc: 'Chaos has side effects: friendly fire chance 15%.',
+    labelKey: 'affixVolatile', descKey: 'affixVolatileDesc',
+  },
+  {
+    id: 'echo',
+    label: 'Echo',
+    desc: 'Matching adjacent elements get +0.20 bonus.',
+    labelKey: 'affixEcho', descKey: 'affixEchoDesc',
+    modifyScore(score, element, vertexKey, layer) { return score; },
+  },
+  {
+    id: 'barren',
+    label: 'Barren',
+    desc: 'All charges are reduced by 20%.',
+    labelKey: 'affixBarren', descKey: 'affixBarrenDesc',
+  },
+  {
+    id: 'harmonic_storm',
+    label: 'Harmonic Storm',
+    desc: 'H and C swap compatibility roles for this layer.',
+    labelKey: 'affixHarmonicStorm', descKey: 'affixHarmonicStormDesc',
+    modifyCompatibility(a, b) {
+      if ((a === 'H' && b === 'C') || (a === 'C' && b === 'H')) return 0.75;
+      return null;
+    },
+  },
+  {
+    id: 'mirage',
+    label: 'Mirage',
+    desc: 'Vertex affinity is randomized each turn.',
+    labelKey: 'affixMirage', descKey: 'affixMirageDesc',
+  },
+  {
+    id: 'fortress',
+    label: 'Fortress',
+    desc: 'System gets +0.15 charge on all placements.',
+    labelKey: 'affixFortress', descKey: 'affixFortressDesc',
+  },
+  {
+    id: 'cascade',
+    label: 'Cascade',
+    desc: 'Placing an element triggers a free adjacent placement (50% charge).',
+    labelKey: 'affixCascade', descKey: 'affixCascadeDesc',
+  },
+  {
+    id: 'gravity_well',
+    label: 'Gravity Well',
+    desc: 'First placement each turn pulls the next to the opposite vertex.',
+    labelKey: 'affixGravityWell', descKey: 'affixGravityWellDesc',
+  },
+]);
+
+/* ---- Element XP & Ranks ---- */
+const ELEMENT_RANK_THRESHOLDS = [0, 3, 8, 15];
+const ELEMENT_RANK_NAMES = ['Basic', 'Evolved', 'Mastered', 'Transcended'];
+const RANK_NAME_KEYS = ['rankBasic', 'rankEvolved', 'rankMastered', 'rankTranscended'];
+
+function getElementRank(xp) {
+  let rank = 0;
+  for (let i = ELEMENT_RANK_THRESHOLDS.length - 1; i >= 0; i--) {
+    if (xp >= ELEMENT_RANK_THRESHOLDS[i]) { rank = i; break; }
+  }
+  return rank;
+}
+
+function getRankBonus(element, rank, vertexKey) {
+  if (rank < 1) return { affinity: 0, charge: 0, scoreMult: 1 };
+  const bonus = { affinity: 0, charge: 0, scoreMult: 1 };
+  if (element === 'H' && rank >= 1) bonus.charge = 0.02 * rank;
+  if (element === 'F' && rank >= 1) bonus.scoreMult = 1 + 0.04 * rank;
+  if (element === 'S' && rank >= 1) bonus.affinity = 0.03 * rank;
+  if (element === 'C' && rank >= 1) bonus.charge = 0.03 * rank;
+  if (element === 'B' && rank >= 1) bonus.affinity = 0.04 * rank;
+  return bonus;
+}
+
+/* ---- AI Personalities ---- */
+const AI_PERSONALITIES = Object.freeze([
+  {
+    id: 'aggressor',
+    name: 'Aggressor',
+    desc: 'Targets player-held vertices aggressively.',
+    nameKey: 'aiAggressor', descKey: 'aiAggressorDesc',
+    weightFactor(ownGain, denial, affinity, playerPressure) {
+      return ownGain * 0.6 + denial * 0.7 + playerPressure * 0.5;
+    },
+  },
+  {
+    id: 'defender',
+    name: 'Defender',
+    desc: 'Builds around existing system clusters.',
+    nameKey: 'aiDefender', descKey: 'aiDefenderDesc',
+    weightFactor(ownGain, denial, affinity, playerPressure) {
+      return ownGain * 0.8 + denial * 0.3 + affinity * 0.6;
+    },
+  },
+  {
+    id: 'controller',
+    name: 'Controller',
+    desc: 'Prioritizes vertex affinity and chaos control.',
+    nameKey: 'aiController', descKey: 'aiControllerDesc',
+    weightFactor(ownGain, denial, affinity, playerPressure) {
+      return ownGain * 0.5 + affinity * 0.8 + denial * 0.4;
+    },
+  },
+  {
+    id: 'opportunist',
+    name: 'Opportunist',
+    desc: 'Exploits weak player patterns.',
+    nameKey: 'aiOpportunist', descKey: 'aiOpportunistDesc',
+    weightFactor(ownGain, denial, affinity, playerPressure) {
+      return ownGain * 0.4 + denial * 0.9 + playerPressure * 0.4;
+    },
+  },
+]);
+
+const VERTEX_TRAITS = Object.freeze({
+  H: { preferred: { H: 1.00, B: 0.82, S: 0.66, F: 0.50, C: 0.16 }, label: 'Harmony rewards stable resonance.', labelKey: 'vertexH' },
+  Z: { preferred: { S: 1.00, H: 0.80, B: 0.72, F: 0.46, C: 0.20 }, label: 'Zenith rewards ordered structure.', labelKey: 'vertexZ' },
+  C: { preferred: { B: 1.00, F: 0.78, H: 0.66, S: 0.54, C: 0.36 }, label: 'Catalyst rewards bridges and tempo.', labelKey: 'vertexC' },
+  T: { preferred: { C: 1.00, F: 0.78, B: 0.58, S: 0.42, H: 0.34 }, label: 'Tension rewards controlled chaos.', labelKey: 'vertexT' },
+  P: { preferred: { F: 1.00, C: 0.70, B: 0.64, H: 0.52, S: 0.44 }, label: 'Pulse rewards frequency.', labelKey: 'vertexP' },
+  X: { preferred: { B: 1.00, C: 0.78, F: 0.62, S: 0.50, H: 0.42 }, label: 'Xeno rewards bridges into the unknown.', labelKey: 'vertexX' },
+  R: { preferred: { S: 1.00, B: 0.76, H: 0.70, F: 0.42, C: 0.24 }, label: 'Root anchors cubic stability.', labelKey: 'vertexR' },
+  N: { preferred: { B: 1.00, H: 0.72, F: 0.70, S: 0.58, C: 0.34 }, label: 'Nexus multiplies bridge decisions.', labelKey: 'vertexN' },
+  Q: { preferred: { F: 1.00, B: 0.74, C: 0.68, S: 0.48, H: 0.44 }, label: 'Quanta rewards fast unstable momentum.', labelKey: 'vertexQ' },
+  O: { preferred: { H: 0.86, S: 0.82, B: 0.78, F: 0.52, C: 0.22 }, label: 'Orbit rewards balanced cubic loops.', labelKey: 'vertexO' },
 });
 
-self.addEventListener('fetch', event => {
-  if (event.request.method !== 'GET') return;
-  event.respondWith(fetch(event.request).then(response => {
-    const copy = response.clone();
-    caches.open(CYCLUS_CACHE).then(cache => cache.put(event.request, copy)).catch(() => undefined);
-    return response;
-  }).catch(() => caches.match(event.request).then(cached => cached || caches.match('./index.html'))));
+
+function deterministicHash01(...parts) {
+  const text = parts.map(p => String(p ?? '')).join('|');
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0) / 4294967295;
+}
+
+function deterministicJitter(amplitude, ...parts) {
+  return (deterministicHash01(...parts) - 0.5) * amplitude;
+}
+
+function compatibility(a, b) {
+  if (!a || !b) return 0.50;
+  return COMPAT_MATRIX[`${a},${b}`] ?? 0.50;
+}
+
+function vertexAffinity(vertexKey, element) {
+  return VERTEX_TRAITS[vertexKey]?.preferred?.[element] ?? 0.50;
+}
+
+function getAdjacentKeys(layer, vertexKey) {
+  if (!layer || !layer.vertexKeys) return [];
+  const idx = layer.vertexKeys.indexOf(vertexKey);
+  if (idx < 0) return [];
+  const n = layer.vertexKeys.length;
+  return [layer.vertexKeys[(idx - 1 + n) % n], layer.vertexKeys[(idx + 1) % n]];
+}
+
+function placedView(layer, override) {
+  const view = {};
+  for (const k of layer.vertexKeys) {
+    const v = layer.vertices[k];
+    view[k] = { owner: v.owner, element: v.element, charge: v.charge };
+  }
+  if (override) {
+    view[override.vertexKey] = {
+      owner: override.owner,
+      element: override.element,
+      charge: override.charge ?? 0.8,
+    };
+  }
+  return view;
+}
+
+function viewFingerprint(layer, view) {
+  return layer.vertexKeys.map(k => {
+    const v = view[k] || {};
+    return `${k}:${v.owner || 'none'}:${v.element || '-'}:${Math.round((v.charge || 0) * 100)}`;
+  }).join(',');
+}
+
+function scoreOne(layer, view, vertexKey, affix, rankBonuses, layerScars) {
+  const v = view[vertexKey];
+  if (!v || v.owner === 'none') return null;
+
+  let baseAff = vertexAffinity(vertexKey, v.element);
+  if (affix?.id === 'mirage') {
+    baseAff = Math.max(0.05, Math.min(1.0, baseAff + deterministicJitter(0.5, 'mirage', layer.level, vertexKey, v.owner, v.element, viewFingerprint(layer, view))));
+  }
+  const rb = rankBonuses?.[v.element] || { affinity: 0, charge: 0, scoreMult: 1 };
+  const scarBonus = (layerScars && layerScars[vertexKey]) || 0;
+  const aff = Math.min(1, baseAff + rb.affinity + scarBonus);
+  let chargeVal = v.charge + (rb.charge || 0);
+  if (affix?.id === 'barren') chargeVal *= 0.8;
+
+  if (affix?.id === 'fortress' && v.owner === 'system') chargeVal += 0.15;
+
+  let score = 1.00 + chargeVal * 0.45 + aff * 0.62;
+  let harmony = 0;
+  let tension = 0;
+  let bridge = v.element === 'B' ? 0.18 : 0;
+  let chaosRisk = 0;
+
+  for (const nk of getAdjacentKeys(layer, vertexKey)) {
+    const nv = view[nk];
+    if (!nv || nv.owner === 'none' || !nv.element) continue;
+    let comp = compatibility(v.element, nv.element);
+
+    if (affix?.id === 'harmonic_storm') {
+      const override = AFFIX_DEFS[4].modifyCompatibility(v.element, nv.element);
+      if (override !== null) comp = override;
+    }
+    if (affix?.id === 'resonant' && comp > 0.80) comp *= 2;
+
+    if (nv.owner === v.owner) {
+      const bonus = (comp - 0.45) * 0.58;
+      score += bonus;
+      harmony += Math.max(0, bonus);
+    } else {
+      const conflict = (0.55 - comp) * 0.50;
+      score += conflict;
+      tension += Math.max(0, conflict);
+      if (v.element === 'B') score += comp * 0.12;
+    }
+    if (v.element === 'C' && comp < 0.25) chaosRisk += 0.10;
+  }
+
+  if (affix?.id === 'echo') {
+    for (const nk of getAdjacentKeys(layer, vertexKey)) {
+      const nv = view[nk];
+      if (nv && nv.owner === v.owner && nv.element === v.element) score += 0.20;
+    }
+  }
+
+  if (affix?.id === 'cascade') {
+    for (const nk of getAdjacentKeys(layer, vertexKey)) {
+      const nv = view[nk];
+      if (nv && nv.owner === 'none') {
+        const cascadeAff = vertexAffinity(nk, v.element);
+        score += (0.8 + cascadeAff * 0.5) * 0.35;
+      }
+    }
+  }
+
+  if (affix?.id === 'gravity_well') {
+    const n = layer.vertexKeys.length;
+    const idx = layer.vertexKeys.indexOf(vertexKey);
+    if (idx >= 0 && n >= 4) {
+      const oppIdx = (idx + Math.floor(n / 2)) % n;
+      const oppKey = layer.vertexKeys[oppIdx];
+      const oppV = view[oppKey];
+      if (oppV && oppV.owner === v.owner && oppV.element) score += 0.20;
+    }
+  }
+
+  if (v.element === 'C') {
+    const riskyHome = vertexKey === 'T' || vertexKey === 'X' || vertexKey === 'P';
+    score += riskyHome ? 0.22 : -0.18;
+    score -= chaosRisk;
+    if (affix?.id === 'volatile' && deterministicHash01('volatile', layer.level, vertexKey, v.owner, v.element, viewFingerprint(layer, view)) < 0.15) score -= 0.25;
+  }
+  if (v.element === 'H' && aff > 0.85) score += 0.12;
+  if (v.element === 'S' && (vertexKey === 'Z' || vertexKey === 'H')) score += 0.12;
+  if (v.element === 'F' && vertexKey === 'P') score += 0.16;
+
+  score *= rb.scoreMult;
+
+  return {
+    owner: v.owner,
+    element: v.element,
+    score: Math.max(0, score + bridge),
+    affinity: aff,
+    harmony,
+    tension,
+    bridge,
+    chaosRisk,
+  };
+}
+
+function evaluateLayerScores(layer, override = null, affix = null, rankBonuses = null, layerScars = null) {
+  const view = placedView(layer, override);
+  let playerScore = 0;
+  let systemScore = 0;
+  let harmony = 0;
+  let tension = 0;
+  let bridge = 0;
+  let chaosRisk = 0;
+  const vertexScores = {};
+
+  for (const key of layer.vertexKeys) {
+    const sv = scoreOne(layer, view, key, affix, rankBonuses, layerScars);
+    if (!sv) continue;
+    vertexScores[key] = sv;
+    if (sv.owner === 'player') playerScore += sv.score;
+    if (sv.owner === 'system') systemScore += sv.score;
+    harmony += sv.harmony;
+    tension += sv.tension;
+    bridge += sv.bridge;
+    chaosRisk += sv.chaosRisk;
+  }
+
+  const total = playerScore + systemScore;
+  const margin = playerScore - systemScore;
+  const coherence = total > 0 ? Math.max(0, Math.min(1, 0.5 + margin / Math.max(4, total * 2))) : 0.5;
+  let winner = 'hybrid';
+  const threshold = Math.max(0.35, layer.vertexCount * 0.13);
+  if (margin > threshold) winner = 'player';
+  if (margin < -threshold) winner = 'system';
+
+  return {
+    winner,
+    playerScore: round2(playerScore),
+    systemScore: round2(systemScore),
+    margin: round2(margin),
+    coherence: round2(coherence),
+    harmony: round2(harmony),
+    tension: round2(tension),
+    bridge: round2(bridge),
+    chaosRisk: round2(chaosRisk),
+    vertexScores,
+  };
+}
+
+function previewPlacement(layer, vertexKey, element, owner = 'player', affix = null, rankBonuses = null, layerScars = null) {
+  const before = evaluateLayerScores(layer, null, affix, rankBonuses, layerScars);
+  const after = evaluateLayerScores(layer, { vertexKey, element, owner, charge: owner === 'player' ? 0.85 : 0.75 }, affix, rankBonuses, layerScars);
+  const vDef = VERTEX_TRAITS[vertexKey];
+  return {
+    vertexKey,
+    element,
+    owner,
+    affinity: round2(vertexAffinity(vertexKey, element)),
+    before,
+    after,
+    deltaPlayer: round2(after.playerScore - before.playerScore),
+    deltaSystem: round2(after.systemScore - before.systemScore),
+    deltaMargin: round2(after.margin - before.margin),
+    projectedWinner: after.winner,
+    trait: vDef?.label || 'Neutral vertex.',
+    traitKey: vDef?.labelKey || 'vertexNeutral',
+  };
+}
+
+function evaluateAIMove(layer, emptyVertex, element, systemOwned, playerOwned, difficulty = 0.6, personality = null, affix = null, rankBonuses = null, layerScars = null) {
+  const activePersonality = personality || AI_PERSONALITIES[0];
+  const preview = previewPlacement(layer, emptyVertex, element, 'system', affix, rankBonuses, layerScars);
+  const ownGain = preview.deltaSystem;
+  const denial = Math.max(0, -preview.deltaMargin) * 0.18;
+  const playerPressure = playerOwned.length > systemOwned.length ? 0.12 : 0;
+  const affinity = preview.affinity * 0.55;
+  const chaosControl = element === 'C' && (emptyVertex === 'T' || emptyVertex === 'X') ? 0.18 : 0;
+  const bridgeControl = element === 'B' && preview.after.bridge > 0 ? 0.12 : 0;
+  const jitter = deterministicHash01('ai', layer.level, emptyVertex, element, activePersonality.id, difficulty, viewFingerprint(layer, placedView(layer, null))) * 0.04 * (1.2 - Math.min(1, difficulty));
+  const weighted = activePersonality.weightFactor(ownGain, denial, affinity, playerPressure);
+  return weighted + chaosControl + bridgeControl + jitter;
+}
+
+function round2(x) {
+  return Math.round(x * 100) / 100;
+}
+//=== lang.mjs ===
+const LANGUAGES = {
+  en: {
+    label: 'English', flag: 'EN',
+    title: 'How to Play',
+    skip: 'Skip',
+    goal: 'Goal: Push your genome to 0.95 before the System drops it to 0.05.',
+    elements: 'Elements: H=Harmony, F=Frequency, S=Structure, C=Chaos, B=Bridge. Each vertex favors certain elements (hover to see affinity).',
+    scoring: 'Scoring: Each placement is scored by element compatibility with neighbors + vertex affinity + charge. Higher score = genome shifts in your favor.',
+    loser: 'Loser chooses the next shape. Core shapes are available from the start; Cube and Cuboid unlock in advanced layers.',
+    headerGenome: 'Genome', headerBest: 'Best', headerCoherence: 'Coherence',
+    headerObjective: 'Objective', headerUpgrade: 'Upgrades', headerNone: 'none',
+    headerLayer: 'Layer', headerCombo: 'Combo',
+    headerTurnYour: "Your turn", headerTurnSystem: "System's turn",
+    headerPlayer: 'P', headerSystem: 'S',
+    headerTurn: 'Turn',
+    headerPressure: 'Pressure', headerPressureLeft: 'left',
+    tutorialKicker: 'First minute',
+    tutorialSteps: [
+      'Step 1/5: select an empty vertex on the shape.',
+      'Step 2/5: hover H/F/S/C/B to preview the margin shift.',
+      'Step 3/5: place an element. Vertex meaning and neighbor compatibility matter.',
+      'Step 4/5: watch the System respond. It evaluates both vertex and element.',
+      'Step 5/5: complete the layer. The loser chooses the next battlefield.',
+    ],
+    statusAwaitingStart: 'Press Start Cycle to begin.',
+    statusSelectVertex: 'Select an empty vertex. Vertex meaning now matters.',
+    statusSelected: 'Selected {0}. Choose an element; hover to preview.',
+    statusSystemTurn: 'System is weighing vertex + element + neighbor pressure...',
+    btnStartCycle: 'Start Cycle',
+    btnHowToPlay: 'How to Play',
+    btnSoundOn: '\u266a Sound On',
+    btnSoundOff: '\u266a Sound Off',
+    btnResetSave: 'Reset Save',
+    btnPlayAgain: '[~] Play Again',
+    btnResume: '> Resume',
+    btnRestart: '[~] Restart Game',
+    btnClose: 'Close',
+    btnReturn: 'Return',
+    btnCloseTab: 'Close Tab',
+    closeTitle: 'Cycle Closed',
+    everyEndSeed: 'Every end is a seed.',
+    closeDesc: 'Progress saved. You can now close this tab, or return to the cycle.',
+    closeDescManual: 'If the browser does not close automatically, you can safely close this tab now. Every end is a seed.',
+    btnMuteAudio: '\u266a Toggle Audio',
+    btnSystemChoose: 'Let System Choose',
+    btnContinue: 'Continue',
+    tipSystemChoose: 'Give the next-shape decision back to the System.',
+    tipContinue: 'Continue to the shape selected by the System.',
+    feedbackSelected: 'Selected {0}. Hover an element to preview.',
+    feedbackPlaced: '{0} placed: margin {1}{2}',
+    feedbackBridge: 'Bridge stabilizes the pattern ({0})',
+    feedbackChaosRise: 'Chaos adds power, but risk rises.',
+    feedbackChaosCtrl: 'Controlled Chaos bends the layer.',
+    feedbackPerfectAff: 'Perfect affinity: {0} belongs here.',
+    feedbackSystemMove: 'System ({0}) answers with {1} on {2}.',
+    feedbackRankUp: '{0} reached {1}!',
+    feedbackScars: 'Layer scars: {0} affinity +{1}%',
+    feedbackUpgraded: '{0} upgraded to {1}.',
+    feedbackTutorialDone: 'Tutorial complete. Shape the genome.',
+    feedbackAudioOff: 'Audio muted.',
+    feedbackAudioOn: 'Audio enabled.',
+    feedbackConvergence: 'The cycle converged before it could drag on.',
+    transPlayerWin: 'You imprint the genome',
+    transSystemWin: 'The System suppresses the seed',
+    transHybrid: 'Hybrid instability',
+    transObjective: '<b>Objective:</b>',
+    transCompleted: 'completed',
+    transMissed: 'missed',
+    transAffix: '<b>Affix:</b>',
+    transAI: '<b>AI:</b>',
+    transGenome: '<b>Genome:</b>',
+    transLayerScore: '<b>Layer score:</b>',
+    transYou: 'You',
+    transSystemScore: 'System',
+    transMargin: 'Margin',
+    transSignals: '<b>Signals:</b>',
+    transHarmony: 'Harmony',
+    transTension: 'Tension',
+    transBridge2: 'Bridge',
+    transChaosRisk: 'Chaos risk',
+    transPressure: '<b>Pressure:</b>',
+    transConverged: 'cycle converged',
+    transReason: 'reason:',
+    convergenceReasonPressure: 'pressure limit',
+    convergenceReasonTight: 'tight margin',
+    convergenceReasonHybrid: 'hybrid instability',
+    convergenceReasonNormal: 'normal resolution',
+    transDivObjective: 'Objective Reward',
+    transDivShape: 'Next Shape',
+    transSystemChoice: 'System chooses {0}',
+    transAdvanced: 'ADVANCED CUBIC',
+    transCore: 'CORE',
+    gameoverPlayerTitle: 'The Organism is Born',
+    gameoverPlayerDesc: 'Your genome ({0}) prevailed. The creature takes your form.',
+    gameoverSystemTitle: 'The Seed Collapsed',
+    gameoverSystemDesc: 'Your genome ({0}) was overwhelmed. The system corrupted the seed.',
+    helpToggle: '[?] How to Play',
+    helpKeys: '<p><kbd>H</kbd> <kbd>F</kbd> <kbd>S</kbd> <kbd>C</kbd> <kbd>B</kbd> place elements after selecting a vertex.</p>',
+    startKicker: 'GENOME CONFLICT',
+    startTitle: 'CYCLUS',
+    startSubtitle: 'A symbolic strategy game where every move reshapes a living genome \u2014 and losing lets you choose the next battlefield.',
+    startRule1: 'Select an empty vertex.',
+    startRule2: 'Choose H/F/S/C/B. Hover first to preview the score shift.',
+    startRule3: 'Triangle, Square, Pentagon, and Hexagon are available from the start.',
+    startRule4: 'Advanced play unlocks Cube and Cuboid battlefields.',
+    startRule5: 'Cycle Pressure resolves long or undecided layers before they drag on.',
+    loadingSub: 'Core shapes from start \u00b7 advanced cubic mode later',
+    version: 'v3.7.1-github-split-public-formula-hiding',
+    pauseTitle: '[||] Paused',
+    elemHarmony: 'Harmony',
+    elemHarmonyRole: 'stabilizes friendly patterns',
+    elemFrequency: 'Frequency',
+    elemFrequencyRole: 'amplifies tempo and pressure',
+    elemStructure: 'Structure',
+    elemStructureRole: 'anchors resilient control',
+    elemChaos: 'Chaos',
+    elemChaosRole: 'disrupts enemies with risk',
+    elemBridge: 'Bridge',
+    elemBridgeRole: 'connects weak matches safely',
+    affixResonant: 'Resonant',
+    affixResonantDesc: 'High compatibility scores (>0.80) are doubled.',
+    affixVolatile: 'Volatile',
+    affixVolatileDesc: 'Chaos has side effects: friendly fire chance 15%.',
+    affixEcho: 'Echo',
+    affixEchoDesc: 'Matching adjacent elements get +0.20 bonus.',
+    affixBarren: 'Barren',
+    affixBarrenDesc: 'All charges are reduced by 20%.',
+    affixHarmonicStorm: 'Harmonic Storm',
+    affixHarmonicStormDesc: 'H and C swap compatibility roles for this layer.',
+    affixMirage: 'Mirage',
+    affixMirageDesc: 'Vertex affinity is randomized each turn.',
+    affixFortress: 'Fortress',
+    affixFortressDesc: 'System gets +0.15 charge on all placements.',
+    affixCascade: 'Cascade',
+    affixCascadeDesc: 'Placing an element triggers a free adjacent placement (50% charge).',
+    affixGravityWell: 'Gravity Well',
+    affixGravityWellDesc: 'First placement each turn pulls the next to the opposite vertex.',
+    aiAggressor: 'Aggressor',
+    aiAggressorDesc: 'Targets player-held vertices aggressively.',
+    aiDefender: 'Defender',
+    aiDefenderDesc: 'Builds around existing system clusters.',
+    aiController: 'Controller',
+    aiControllerDesc: 'Prioritizes vertex affinity and chaos control.',
+    aiOpportunist: 'Opportunist',
+    aiOpportunistDesc: 'Exploits weak player patterns.',
+    vertexH: 'Harmony rewards stable resonance.',
+    vertexZ: 'Zenith rewards ordered structure.',
+    vertexC: 'Catalyst rewards bridges and tempo.',
+    vertexT: 'Tension rewards controlled chaos.',
+    vertexP: 'Pulse rewards frequency.',
+    vertexX: 'Xeno rewards bridges into the unknown.',
+    vertexR: 'Root anchors cubic stability.',
+    vertexN: 'Nexus multiplies bridge decisions.',
+    vertexQ: 'Quanta rewards fast unstable momentum.',
+    vertexO: 'Orbit rewards balanced cubic loops.',
+    vertexNeutral: 'Neutral vertex.',
+    vshortH: 'Harmony', vshortZ: 'Zenith', vshortC: 'Catalyst', vshortT: 'Tension',
+    vshortP: 'Pulse', vshortX: 'Xeno', vshortR: 'Root', vshortN: 'Nexus', vshortQ: 'Quanta', vshortO: 'Orbit',
+    rankBasic: 'Basic',
+    rankEvolved: 'Evolved',
+    rankMastered: 'Mastered',
+    rankTranscended: 'Transcended',
+    rankAbbr: ['B', 'E', 'M', 'T'],
+    shapeTriangle: 'Triangle',
+    shapeSquare: 'Square',
+    shapePentagon: 'Pentagon',
+    shapeHexagon: 'Hexagon',
+    shapeCube: 'Cube',
+    shapeCuboid: 'Cuboid',
+    tierCore: 'core',
+    tierAdvanced: 'advanced',
+    miscTitle: 'CYCLUS Prime \u2014 Genome Conflict',
+    objectiveDefault: 'survive the layer',
+    upgradeNone: 'No upgrades yet',
+    upgradeStabilize: 'Stabilize',
+    upgradeStabilizeText: 'System losses hurt 10% less.',
+    upgradeResonance: 'Resonance',
+    upgradeResonanceText: 'Frequency placements gain extra charge.',
+    upgradeScaffold: 'Scaffold',
+    upgradeScaffoldText: 'Structure placements gain extra charge.',
+    upgradeBridgeMemory: 'Bridge Memory',
+    upgradeBridgeMemoryText: 'Bridge objective bonuses are stronger.',
+    upgradeEntropyControl: 'Entropy Control',
+    upgradeEntropyControlText: 'Chaos penalties are softened.',
+    objCoherence70: 'Win with coherence \u2265 0.70',
+    objCoherence70Hint: 'Use vertex affinity and friendly neighbor compatibility.',
+    objBridge2: 'Place Bridge twice and avoid collapse',
+    objBridge2Hint: 'Bridge stabilizes weak matches and protects mixed patterns.',
+    objChaosLow: 'Contain Chaos risk below 0.20',
+    objChaosLowHint: 'Use Chaos only on Tension, Pulse, or Xeno when it pays off.',
+    objAdjacentPair: 'Capture two adjacent vertices',
+    objAdjacentPairHint: 'Adjacent friendly cells amplify the layer score.',
+    objMargin2: 'Win by margin \u2265 2.00',
+    objMargin2Hint: 'Pick strong vertex-element matches before the System blocks them.',
+    previewAffinity: 'Affinity',
+    previewProjected: 'Projected',
+  },
+  ar: {
+    label: '\u0627\u0644\u0639\u0631\u0628\u064a\u0629', flag: 'AR',
+    title: '\u0643\u064a\u0641\u064a\u0629 \u0627\u0644\u0644\u0639\u0628',
+    skip: '\u062a\u062c\u0627\u0648\u0632',
+    goal: '\u0627\u0644\u0647\u062f\u0641: \u0627\u0631\u0641\u0639 \u062c\u064a\u0646\u0648\u0645\u0643 \u0625\u0644\u0649 0.95 \u0642\u0628\u0644 \u0623\u0646 \u064a\u062e\u0641\u0636\u0647 \u0627\u0644\u0646\u0638\u0627\u0645 \u0625\u0644\u0649 0.05.',
+    elements: '\u0627\u0644\u0639\u0646\u0627\u0635\u0631: H=\u062a\u0646\u0627\u063a\u0645\u060c F=\u062a\u0631\u062f\u062f\u060c S=\u0628\u0646\u064a\u0629\u060c C=\u0641\u0648\u0636\u0649\u060c B=\u062c\u0633\u0631. \u0643\u0644 \u0631\u0623\u0633 \u064a\u0641\u0636\u0644 \u0639\u0646\u0627\u0635\u0631 \u0645\u0639\u064a\u0646\u0629 (\u0645\u0631\u0631 \u0627\u0644\u0645\u0624\u0634\u0631 \u0644\u0631\u0624\u064a\u0629 \u0627\u0644\u0623\u0644\u0641\u0629).',
+    scoring: '\u0627\u0644\u062a\u0642\u064a\u064a\u0645: \u0643\u0644 \u0648\u0636\u0639 \u064a\u064f\u062d\u062a\u0633\u0628 \u0628\u0640: \u062a\u0648\u0627\u0641\u0642 \u0627\u0644\u0639\u0646\u0635\u0631 \u0645\u0639 \u0627\u0644\u062c\u064a\u0631\u0627\u0646 + \u0623\u0644\u0641\u0629 \u0627\u0644\u0631\u0623\u0633 + \u0627\u0644\u0634\u062d\u0646\u0629. \u0627\u0644\u0646\u062a\u064a\u062c\u0629 \u0627\u0644\u0623\u0639\u0644\u0649 = \u0627\u0644\u062c\u064a\u0646\u0648\u0645 \u064a\u062a\u062c\u0647 \u0644\u0635\u0627\u0644\u062d\u0643.',
+    loser: '\u0627\u0644\u062e\u0627\u0633\u0631 \u064a\u062e\u062a\u0627\u0631 \u0627\u0644\u0634\u0643\u0644 \u0627\u0644\u062a\u0627\u0644\u064a. \u0627\u0644\u0623\u0634\u0643\u0627\u0644 \u0627\u0644\u0623\u0633\u0627\u0633\u064a\u0629 \u0645\u062a\u0627\u062d\u0629 \u0645\u0646 \u0627\u0644\u0628\u062f\u0627\u064a\u0629\u061b \u0648\u064a\u064f\u0641\u062a\u062d \u0627\u0644\u0645\u0643\u0639\u0628 \u0648\u0645\u062a\u0648\u0627\u0632\u064a \u0627\u0644\u0645\u0633\u062a\u0637\u064a\u0644\u0627\u062a \u0641\u064a \u0627\u0644\u0637\u0628\u0642\u0627\u062a \u0627\u0644\u0645\u062a\u0642\u062f\u0645\u0629.',
+    headerGenome: '\u0627\u0644\u062c\u064a\u0646\u0648\u0645', headerBest: '\u0627\u0644\u0623\u0641\u0636\u0644', headerCoherence: '\u0627\u0644\u062a\u0645\u0627\u0633\u0643',
+    headerObjective: '\u0627\u0644\u0647\u062f\u0641', headerUpgrade: '\u0627\u0644\u062a\u0637\u0648\u064a\u0631\u0627\u062a', headerNone: '\u0644\u0627 \u064a\u0648\u062c\u062f',
+    headerLayer: '\u0627\u0644\u0637\u0628\u0642\u0629', headerCombo: '\u0627\u0644\u0633\u0644\u0633\u0644\u0629',
+    headerTurnYour: '\u062f\u0648\u0631\u0643', headerTurnSystem: '\u062f\u0648\u0631 \u0627\u0644\u0646\u0638\u0627\u0645',
+    headerPlayer: '\u0644', headerSystem: '\u0646',
+    headerTurn: '\u0627\u0644\u062f\u0648\u0631',
+    headerPressure: '\u0636\u063a\u0637 \u0627\u0644\u062f\u0648\u0631\u0629', headerPressureLeft: '\u0645\u062a\u0628\u0642\u064a',
+    tutorialKicker: '\u0627\u0644\u062f\u0642\u064a\u0642\u0629 \u0627\u0644\u0623\u0648\u0644\u0649',
+    tutorialSteps: [
+      '\u0627\u0644\u062e\u0637\u0648\u0629 1/5: \u0627\u062e\u062a\u0631 \u0631\u0623\u0633\u0627\u064b \u0641\u0627\u0631\u063a\u0627\u064b \u0639\u0644\u0649 \u0627\u0644\u0634\u0643\u0644.',
+      '\u0627\u0644\u062e\u0637\u0648\u0629 2/5: \u0645\u0631\u0631 \u0627\u0644\u0645\u0624\u0634\u0631 \u0639\u0644\u0649 H/F/S/C/B \u0644\u0645\u0639\u0627\u064a\u0646\u0629 \u062a\u063a\u064a\u0631 \u0627\u0644\u0647\u0627\u0645\u0634.',
+      '\u0627\u0644\u062e\u0637\u0648\u0629 3/5: \u0636\u0639 \u0639\u0646\u0635\u0631\u0627\u064b. \u0645\u0639\u0646\u0649 \u0627\u0644\u0631\u0623\u0633 \u0648\u062a\u0648\u0627\u0641\u0642 \u0627\u0644\u062c\u064a\u0631\u0627\u0646 \u0645\u0647\u0645.',
+      '\u0627\u0644\u062e\u0637\u0648\u0629 4/5: \u0631\u0627\u0642\u0628 \u0631\u062f \u0627\u0644\u0646\u0638\u0627\u0645. \u0625\u0646\u0647 \u064a\u064f\u0642\u064a\u0651\u0645 \u0627\u0644\u0631\u0623\u0633 \u0648\u0627\u0644\u0639\u0646\u0635\u0631 \u0645\u0639\u0627\u064b.',
+      '\u0627\u0644\u062e\u0637\u0648\u0629 5/5: \u0623\u0643\u0645\u0644 \u0627\u0644\u0637\u0628\u0642\u0629. \u0627\u0644\u062e\u0627\u0633\u0631 \u064a\u062e\u062a\u0627\u0631 \u0633\u0627\u062d\u0629 \u0627\u0644\u0645\u0639\u0631\u0643\u0629 \u0627\u0644\u062a\u0627\u0644\u064a\u0629.',
+    ],
+    statusAwaitingStart: '\u0627\u0636\u063a\u0637 \u0639\u0644\u0649 \u00ab\u0628\u062f\u0621 \u0627\u0644\u062f\u0648\u0631\u0629\u00bb \u0644\u0644\u0628\u062f\u0621.',
+    statusSelectVertex: '\u0627\u062e\u062a\u0631 \u0631\u0623\u0633\u0627\u064b \u0641\u0627\u0631\u063a\u0627\u064b. \u0645\u0639\u0646\u0649 \u0627\u0644\u0631\u0623\u0633 \u064a\u064f\u062d\u062f\u062f \u0627\u0644\u0622\u0646.',
+    statusSelected: '\u062a\u0645 \u0627\u062e\u062a\u064a\u0627\u0631 {0}. \u0627\u062e\u062a\u0631 \u0639\u0646\u0635\u0631\u0627\u064b\u061b \u0645\u0631\u0631 \u0644\u0644\u0645\u0639\u0627\u064a\u0646\u0629.',
+    statusSystemTurn: '\u0627\u0644\u0646\u0638\u0627\u0645 \u064a\u064f\u0642\u064a\u0645 \u0627\u0644\u0631\u0623\u0633 + \u0627\u0644\u0639\u0646\u0635\u0631 + \u0636\u063a\u0637 \u0627\u0644\u062c\u064a\u0631\u0627\u0646...',
+    btnStartCycle: '\u0628\u062f\u0621 \u0627\u0644\u062f\u0648\u0631\u0629',
+    btnHowToPlay: '\u0643\u064a\u0641\u064a\u0629 \u0627\u0644\u0644\u0639\u0628',
+    btnSoundOn: '\u266a \u0627\u0644\u0635\u0648\u062a \u0641\u0639\u0627\u0644',
+    btnSoundOff: '\u266a \u0643\u062a\u0645 \u0627\u0644\u0635\u0648\u062a',
+    btnResetSave: '\u0625\u0639\u0627\u062f\u0629 \u062a\u0639\u064a\u064a\u0646 \u0627\u0644\u062d\u0641\u0638',
+    btnPlayAgain: '[\u007e] \u0627\u0644\u0639\u0628 \u0645\u0631\u0629 \u0623\u062e\u0631\u0649',
+    btnResume: '> \u0627\u0633\u062a\u0626\u0646\u0627\u0641',
+    btnRestart: '[\u007e] \u0625\u0639\u0627\u062f\u0629 \u0627\u0644\u0628\u062f\u0621',
+    btnClose: '\u0625\u063a\u0644\u0627\u0642',
+    btnReturn: '\u0639\u0648\u062f\u0629',
+    btnCloseTab: '\u0625\u063a\u0644\u0627\u0642 \u0627\u0644\u062a\u0628\u0648\u064a\u0628\u0629',
+    closeTitle: '\u0623\u064f\u063a\u0644\u0642\u062a \u0627\u0644\u062f\u0648\u0631\u0629',
+    everyEndSeed: '\u0643\u0644 \u0646\u0647\u0627\u064a\u0629 \u0647\u064a \u0628\u0630\u0631\u0629.',
+    closeDesc: '\u062a\u0645 \u062d\u0641\u0638 \u0627\u0644\u062a\u0642\u062f\u0645. \u064a\u0645\u0643\u0646\u0643 \u0625\u063a\u0644\u0627\u0642 \u0647\u0630\u0647 \u0627\u0644\u062a\u0628\u0648\u064a\u0628\u0629 \u0623\u0648 \u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0627\u0644\u062f\u0648\u0631\u0629.',
+    closeDescManual: '\u0625\u0630\u0627 \u0644\u0645 \u064a\u063a\u0644\u0642 \u0627\u0644\u0645\u062a\u0635\u0641\u062d \u062a\u0644\u0642\u0627\u0626\u064a\u064b\u0627\u060c \u064a\u0645\u0643\u0646\u0643 \u0625\u063a\u0644\u0627\u0642 \u0647\u0630\u0647 \u0627\u0644\u062a\u0628\u0648\u064a\u0628\u0629 \u0628\u0623\u0645\u0627\u0646. \u0643\u0644 \u0646\u0647\u0627\u064a\u0629 \u0647\u064a \u0628\u0630\u0631\u0629.',
+    btnMuteAudio: '\u266a \u062a\u0628\u062f\u064a\u0644 \u0627\u0644\u0635\u0648\u062a',
+    btnSystemChoose: '\u062f\u0639 \u0627\u0644\u0646\u0638\u0627\u0645 \u064a\u062e\u062a\u0627\u0631',
+    btnContinue: '\u0645\u062a\u0627\u0628\u0639\u0629',
+    tipSystemChoose: '\u0623\u0639\u0637 \u0642\u0631\u0627\u0631 \u0627\u0644\u0634\u0643\u0644 \u0627\u0644\u062a\u0627\u0644\u064a \u0644\u0644\u0646\u0638\u0627\u0645.',
+    tipContinue: '\u0645\u062a\u0627\u0628\u0639\u0629 \u0625\u0644\u0649 \u0627\u0644\u0634\u0643\u0644 \u0627\u0644\u0630\u064a \u0627\u062e\u062a\u0627\u0631\u0647 \u0627\u0644\u0646\u0638\u0627\u0645.',
+    feedbackSelected: '\u062a\u0645 \u0627\u062e\u062a\u064a\u0627\u0631 {0}. \u0645\u0631\u0631 \u0644\u0645\u0639\u0627\u064a\u0646\u0629 \u0639\u0646\u0635\u0631.',
+    feedbackPlaced: '\u062a\u0645 \u0648\u0636\u0639 {0}: \u0627\u0644\u0647\u0627\u0645\u0634 {1}{2}',
+    feedbackBridge: '\u0627\u0644\u062c\u0633\u0631 \u064a\u064f\u062d\u0642\u0642 \u0627\u0633\u062a\u0642\u0631\u0627\u0631 \u0627\u0644\u0646\u0645\u0637 ({0})',
+    feedbackChaosRise: '\u0627\u0644\u0641\u0648\u0636\u0649 \u062a\u0636\u064a\u0641 \u0642\u0648\u0629\u064b\u060c \u0648\u0644\u0643\u0646 \u0627\u0644\u0645\u062e\u0627\u0637\u0631 \u062a\u0631\u062a\u0641\u0639.',
+    feedbackChaosCtrl: '\u0627\u0644\u0641\u0648\u0636\u0649 \u0627\u0644\u0645\u0633\u064a\u0637\u0631 \u0639\u0644\u064a\u0647\u0627 \u062a\u064f\u062d\u0646\u064a \u0627\u0644\u0637\u0628\u0642\u0629.',
+    feedbackPerfectAff: '\u0623\u0644\u0641\u0629 \u0645\u062b\u0627\u0644\u064a\u0629: {0} \u064a\u0646\u062a\u0645\u064a \u0647\u0646\u0627.',
+    feedbackSystemMove: '\u0627\u0644\u0646\u0638\u0627\u0645 ({0}) \u064a\u0631\u062f \u0628\u0640 {1} \u0639\u0644\u0649 {2}.',
+    feedbackRankUp: '{0} \u0648\u0635\u0644 \u0625\u0644\u0649 {1}!',
+    feedbackScars: '\u0646\u062f\u0648\u0628\u0627\u062a \u0627\u0644\u0637\u0628\u0642\u0629: {0} \u0627\u0644\u0623\u0644\u0641\u0629 +{1}%',
+    feedbackUpgraded: '\u062a\u0645 \u062a\u0637\u0648\u064a\u0631 {0} \u0625\u0644\u0649 {1}.',
+    feedbackTutorialDone: '\u0627\u0643\u062a\u0645\u0644 \u0627\u0644\u062f\u0644\u064a\u0644. \u0634\u0643\u0651\u0644 \u0627\u0644\u062c\u064a\u0646\u0648\u0645.',
+    feedbackAudioOff: '\u062a\u0645 \u0643\u062a\u0645 \u0627\u0644\u0635\u0648\u062a.',
+    feedbackAudioOn: '\u062a\u0645 \u062a\u0641\u0639\u064a\u0644 \u0627\u0644\u0635\u0648\u062a.',
+    feedbackConvergence: '\u062a\u0642\u0627\u0631\u0628\u062a \u0627\u0644\u062f\u0648\u0631\u0629 \u0642\u0628\u0644 \u0623\u0646 \u062a\u0637\u0648\u0644.',
+    transPlayerWin: '\u0623\u0646\u062a \u062a\u0637\u0628\u0639 \u0627\u0644\u062c\u064a\u0646\u0648\u0645',
+    transSystemWin: '\u0627\u0644\u0646\u0638\u0627\u0645 \u064a\u0643\u0628\u062a \u0627\u0644\u0628\u0630\u0631\u0629',
+    transHybrid: '\u0639\u062f\u0645 \u0627\u0633\u062a\u0642\u0631\u0627\u0631 \u0647\u062c\u064a\u0646',
+    transObjective: '<b>\u0627\u0644\u0647\u062f\u0641:</b>',
+    transCompleted: '\u0645\u064f\u0646\u062c\u0632',
+    transMissed: '\u0644\u0645 \u064a\u064f\u0646\u062c\u0632',
+    transAffix: '<b>\u0627\u0644\u0635\u0641\u0629:</b>',
+    transAI: '<b>\u0627\u0644\u0630\u0643\u0627\u0621 \u0627\u0644\u0627\u0635\u0637\u0646\u0627\u0639\u064a:</b>',
+    transGenome: '<b>\u0627\u0644\u062c\u064a\u0646\u0648\u0645:</b>',
+    transLayerScore: '<b>\u0646\u062a\u064a\u062c\u0629 \u0627\u0644\u0637\u0628\u0642\u0629:</b>',
+    transYou: '\u0623\u0646\u062a',
+    transSystemScore: '\u0627\u0644\u0646\u0638\u0627\u0645',
+    transMargin: '\u0627\u0644\u0647\u0627\u0645\u0634',
+    transSignals: '<b>\u0627\u0644\u0625\u0634\u0627\u0631\u0627\u062a:</b>',
+    transHarmony: '\u062a\u0646\u0627\u063a\u0645',
+    transTension: '\u062a\u0648\u062a\u0631',
+    transBridge2: '\u062c\u0633\u0631',
+    transChaosRisk: '\u0645\u062e\u0627\u0637\u0631 \u0627\u0644\u0641\u0648\u0636\u0649',
+    transPressure: '<b>\u0636\u063a\u0637 \u0627\u0644\u062f\u0648\u0631\u0629:</b>',
+    transConverged: '\u062a\u0642\u0627\u0631\u0628\u062a \u0627\u0644\u062f\u0648\u0631\u0629',
+    transReason: '\u0627\u0644\u0633\u0628\u0628:',
+    convergenceReasonPressure: '\u062d\u062f \u0627\u0644\u0636\u063a\u0637',
+    convergenceReasonTight: '\u0647\u0627\u0645\u0634 \u0636\u064a\u0642',
+    convergenceReasonHybrid: '\u0639\u062f\u0645 \u0627\u0633\u062a\u0642\u0631\u0627\u0631 \u0647\u062c\u064a\u0646',
+    convergenceReasonNormal: '\u062d\u0633\u0645 \u0639\u0627\u062f\u064a',
+    transDivObjective: '\u0645\u0643\u0627\u0641\u0623\u0629 \u0627\u0644\u0647\u062f\u0641',
+    transDivShape: '\u0627\u0644\u0634\u0643\u0644 \u0627\u0644\u062a\u0627\u0644\u064a',
+    transSystemChoice: '\u0627\u0644\u0646\u0638\u0627\u0645 \u064a\u062e\u062a\u0627\u0631 {0}',
+    transAdvanced: '\u0645\u0643\u0639\u0651\u0628 \u0645\u062a\u0642\u062f\u0645',
+    transCore: '\u0623\u0633\u0627\u0633\u064a',
+    gameoverPlayerTitle: '\u0648\u0644\u062f \u0627\u0644\u0643\u0627\u0626\u0646 \u0627\u0644\u062d\u064a',
+    gameoverPlayerDesc: '\u062c\u064a\u0646\u0648\u0645\u0643 ({0}) \u0627\u0646\u062a\u0635\u0631. \u0627\u0644\u0645\u062e\u0644\u0648\u0642 \u064a\u0623\u062e\u0630 \u0634\u0643\u0644\u0643.',
+    gameoverSystemTitle: '\u0627\u0646\u0647\u0627\u0631 \u0627\u0644\u0628\u0630\u0631\u0629',
+    gameoverSystemDesc: '\u062c\u064a\u0646\u0648\u0645\u0643 ({0}) \u063a\u064f\u0644\u0628 \u0639\u0644\u064a\u0647. \u0627\u0644\u0646\u0638\u0627\u0645 \u0623\u0641\u0633\u062f \u0627\u0644\u0628\u0630\u0631\u0629.',
+    helpToggle: '[?] \u0643\u064a\u0641\u064a\u0629 \u0627\u0644\u0644\u0639\u0628',
+    helpKeys: '<p><kbd>H</kbd> <kbd>F</kbd> <kbd>S</kbd> <kbd>C</kbd> <kbd>B</kbd> \u0636\u0639 \u0627\u0644\u0639\u0646\u0627\u0635\u0631 \u0628\u0639\u062f \u0627\u062e\u062a\u064a\u0627\u0631 \u0631\u0623\u0633.</p>',
+    startKicker: '\u0635\u0631\u0627\u0639 \u0627\u0644\u062c\u064a\u0646\u0648\u0645',
+    startTitle: '\u0633\u0627\u064a\u0643\u0644\u0633',
+    startSubtitle: '\u0644\u0639\u0628\u0629 \u0627\u0633\u062a\u0631\u0627\u062a\u064a\u062c\u064a\u0629 \u0631\u0645\u0632\u064a\u0629 \u062d\u064a\u062b \u0643\u0644 \u062d\u0631\u0643\u0629 \u062a\u064f\u0639\u064a\u062f \u062a\u0634\u0643\u064a\u0644 \u062c\u064a\u0646\u0648\u0645 \u062d\u064a \u2014 \u0648\u0627\u0644\u062e\u0633\u0627\u0631\u0629 \u062a\u0633\u0645\u062d \u0644\u0643 \u0628\u0627\u062e\u062a\u064a\u0627\u0631 \u0633\u0627\u062d\u0629 \u0627\u0644\u0645\u0639\u0631\u0643\u0629 \u0627\u0644\u062a\u0627\u0644\u064a\u0629.',
+    startRule1: '\u0627\u062e\u062a\u0631 \u0631\u0623\u0633\u0627\u064b \u0641\u0627\u0631\u063a\u0627\u064b.',
+    startRule2: '\u0627\u062e\u062a\u0631 H/F/S/C/B. \u0645\u0631\u0631 \u0623\u0648\u0644\u0627\u064b \u0644\u0645\u0639\u0627\u064a\u0646\u0629 \u062a\u063a\u064a\u0631 \u0627\u0644\u0646\u062a\u064a\u062c\u0629.',
+    startRule3: '\u0627\u0644\u0645\u062b\u0644\u062b \u0648\u0627\u0644\u0645\u0631\u0628\u0639 \u0648\u0627\u0644\u0645\u062e\u0645\u0633 \u0648\u0627\u0644\u0645\u0633\u062f\u0633 \u0645\u062a\u0627\u062d\u0629 \u0645\u0646 \u0627\u0644\u0628\u062f\u0627\u064a\u0629.',
+    startRule4: '\u0627\u0644\u0644\u0639\u0628 \u0627\u0644\u0645\u062a\u0642\u062f\u0651\u0645 \u064a\u0641\u062a\u062d \u0633\u0627\u062d\u0627\u062a \u0627\u0644\u0645\u0643\u0639\u0628 \u0648\u0645\u062a\u0648\u0627\u0632\u064a \u0627\u0644\u0645\u0633\u062a\u0637\u064a\u0644\u0627\u062a.',
+    startRule5: '\u0636\u063a\u0637 \u0627\u0644\u062f\u0648\u0631\u0629 \u064a\u062d\u0633\u0645 \u0627\u0644\u0637\u0628\u0642\u0627\u062a \u0627\u0644\u0637\u0648\u064a\u0644\u0629 \u0623\u0648 \u063a\u064a\u0631 \u0627\u0644\u0645\u062d\u0633\u0648\u0645\u0629.',
+    loadingSub: '\u0627\u0644\u0623\u0634\u0643\u0627\u0644 \u0627\u0644\u0623\u0633\u0627\u0633\u064a\u0629 \u0645\u0646 \u0627\u0644\u0628\u062f\u0627\u064a\u0629 \u00b7 \u0627\u0644\u0648\u0636\u0639 \u0627\u0644\u0645\u0643\u0639\u0628 \u0627\u0644\u0645\u062a\u0642\u062f\u0651\u0645 \u0644\u0627\u062d\u0642\u0627\u064b',
+    version: 'v3.7.1-github-split-public-formula-hiding',
+    pauseTitle: '[||] \u0625\u064a\u0642\u0627\u0641 \u0645\u0624\u0642\u062a',
+    elemHarmony: '\u062a\u0646\u0627\u063a\u0645',
+    elemHarmonyRole: '\u064a\u064f\u062d\u0642\u0642 \u0627\u0633\u062a\u0642\u0631\u0627\u0631 \u0627\u0644\u0623\u0646\u0645\u0627\u0637 \u0627\u0644\u0635\u062f\u064a\u0642\u0629',
+    elemFrequency: '\u062a\u0631\u062f\u062f',
+    elemFrequencyRole: '\u064a\u064f\u0636\u062e\u0651\u0645 \u0627\u0644\u0625\u064a\u0642\u0627\u0639 \u0648\u0627\u0644\u0636\u063a\u0637',
+    elemStructure: '\u0628\u0646\u064a\u0629',
+    elemStructureRole: '\u064a\u064f\u0631\u0633\u064a \u0627\u0644\u0633\u064a\u0637\u0631\u0629 \u0627\u0644\u0645\u0631\u0646\u0629',
+    elemChaos: '\u0641\u0648\u0636\u0649',
+    elemChaosRole: '\u064a\u064f\u0639\u0637\u0651\u0644 \u0627\u0644\u0623\u0639\u062f\u0627\u0621 \u0628\u0645\u062e\u0627\u0637\u0631',
+    elemBridge: '\u062c\u0633\u0631',
+    elemBridgeRole: '\u064a\u0631\u0628\u0637 \u0627\u0644\u0645\u062a\u0637\u0627\u0628\u0642\u0627\u062a \u0627\u0644\u0636\u0639\u064a\u0641\u0629 \u0628\u0623\u0645\u0627\u0646',
+    affixResonant: '\u0631\u0646\u064a\u0646',
+    affixResonantDesc: '\u0646\u062a\u0627\u0626\u062c \u0627\u0644\u062a\u0648\u0627\u0641\u0642 \u0627\u0644\u0639\u0627\u0644\u064a\u0629 (>0.80) \u062a\u062a\u0636\u0627\u0639\u0641.',
+    affixVolatile: '\u0645\u062a\u0642\u0644\u0642\u0628',
+    affixVolatileDesc: '\u0627\u0644\u0641\u0648\u0636\u0649 \u0644\u0647\u0627 \u0622\u062b\u0627\u0631 \u062c\u0627\u0646\u0628\u064a\u0629: \u0641\u0631\u0635\u0629 \u0625\u0637\u0644\u0627\u0642 \u0646\u0627\u0631 \u0635\u062f\u064a\u0642\u0629 15%.',
+    affixEcho: '\u0635\u062f\u0649',
+    affixEchoDesc: '\u0627\u0644\u0639\u0646\u0627\u0635\u0631 \u0627\u0644\u0645\u062a\u062c\u0627\u0648\u0631\u0629 \u0627\u0644\u0645\u062a\u0637\u0627\u0628\u0642\u0629 \u062a\u062d\u0635\u0644 \u0639\u0644\u0649 +0.20 \u0643\u0645\u0643\u0627\u0641\u0623\u0629.',
+    affixBarren: '\u0642\u0627\u0641\u0631',
+    affixBarrenDesc: '\u062c\u0645\u064a\u0639 \u0627\u0644\u0634\u062d\u0646\u0627\u062a \u062a\u0646\u062e\u0641\u0636 \u0628\u0646\u0633\u0628\u0629 20%.',
+    affixHarmonicStorm: '\u0639\u0627\u0635\u0641\u0629 \u062a\u0648\u0627\u0641\u0642\u064a\u0629',
+    affixHarmonicStormDesc: 'H \u0648 C \u064a\u062a\u0628\u0627\u062f\u0644\u0627\u0646 \u0623\u062f\u0648\u0627\u0631 \u0627\u0644\u062a\u0648\u0627\u0641\u0642 \u0641\u064a \u0647\u0630\u0647 \u0627\u0644\u0637\u0628\u0642\u0629.',
+    affixMirage: '\u0633\u0631\u0627\u0628',
+    affixMirageDesc: '\u0623\u0644\u0641\u0629 \u0627\u0644\u0631\u0623\u0633 \u062a\u062a\u0639\u0634\u0639\u0634 \u0643\u0644 \u062f\u0648\u0631.',
+    affixFortress: '\u062d\u0635\u0646',
+    affixFortressDesc: '\u0627\u0644\u0646\u0638\u0627\u0645 \u064a\u062d\u0635\u0644 \u0639\u0644\u0649 +0.15 \u0634\u062d\u0646\u0629 \u0639\u0646\u062f \u0643\u0644 \u0648\u0636\u0639.',
+    affixCascade: '\u0634\u0644\u0627\u0644',
+    affixCascadeDesc: '\u0648\u0636\u0639 \u0639\u0646\u0635\u0631 \u064a\u064f\u062d\u0631\u0651\u0636 \u0648\u0636\u0639\u0627\u064b \u0645\u062c\u0627\u0646\u064a\u0627\u064b \u0645\u062c\u0627\u0648\u0631\u0627\u064b (50% \u0634\u062d\u0646\u0629).',
+    affixGravityWell: '\u0628\u0626\u0631 \u062c\u0627\u0630\u0628\u064a\u0629',
+    affixGravityWellDesc: '\u0623\u0648\u0644 \u0648\u0636\u0639 \u0641\u064a \u0643\u0644 \u062f\u0648\u0631 \u064a\u0633\u062d\u0628 \u0627\u0644\u062a\u0627\u0644\u064a \u0625\u0644\u0649 \u0627\u0644\u0631\u0623\u0633 \u0627\u0644\u0645\u0642\u0627\u0628\u0644.',
+    aiAggressor: '\u0645\u0647\u0627\u062c\u0645',
+    aiAggressorDesc: '\u064a\u0633\u062a\u0647\u062f\u0641 \u0631\u0624\u0648\u0633 \u0627\u0644\u0644\u0627\u0639\u0628 \u0628\u0639\u062f\u0648\u0627\u0646\u064a\u0629.',
+    aiDefender: '\u0645\u062f\u0627\u0641\u0639',
+    aiDefenderDesc: '\u064a\u0628\u0646\u064a \u062d\u0648\u0644 \u0645\u062c\u0645\u0648\u0639\u0627\u062a \u0627\u0644\u0646\u0638\u0627\u0645 \u0627\u0644\u0645\u0648\u062c\u0648\u062f\u0629.',
+    aiController: '\u0645\u0633\u064a\u0637\u0631',
+    aiControllerDesc: '\u064a\u064f\u0648\u0644\u064a \u0623\u0648\u0644\u0648\u064a\u0629 \u0644\u0623\u0644\u0641\u0629 \u0627\u0644\u0631\u0623\u0633 \u0648\u0627\u0644\u0633\u064a\u0637\u0631\u0629 \u0639\u0644\u0649 \u0627\u0644\u0641\u0648\u0636\u0649.',
+    aiOpportunist: '\u0627\u0646\u062a\u0647\u0627\u0632\u064a',
+    aiOpportunistDesc: '\u064a\u0633\u062a\u063a\u0644 \u0623\u0646\u0645\u0627\u0637 \u0627\u0644\u0644\u0627\u0639\u0628 \u0627\u0644\u0636\u0639\u064a\u0641\u0629.',
+    vertexH: '\u0627\u0644\u062a\u0646\u0627\u063a\u0645 \u064a\u0643\u0627\u0641\u0626 \u0627\u0644\u0631\u0646\u064a\u0646 \u0627\u0644\u0645\u0633\u062a\u0642\u0631.',
+    vertexZ: '\u0627\u0644\u0632\u0646\u064a\u062b \u064a\u0643\u0627\u0641\u0626 \u0627\u0644\u0628\u0646\u064a\u0629 \u0627\u0644\u0645\u0646\u0638\u0645\u0629.',
+    vertexC: '\u0627\u0644\u0645\u062d\u0641\u0632 \u064a\u0643\u0627\u0641\u0626 \u0627\u0644\u062c\u0633\u0648\u0631 \u0648\u0627\u0644\u0625\u064a\u0642\u0627\u0639.',
+    vertexT: '\u0627\u0644\u062a\u0648\u062a\u0631 \u064a\u0643\u0627\u0641\u0626 \u0627\u0644\u0641\u0648\u0636\u0649 \u0627\u0644\u0645\u0633\u064a\u0637\u0631 \u0639\u0644\u064a\u0647\u0627.',
+    vertexP: '\u0627\u0644\u0646\u0628\u0636 \u064a\u0643\u0627\u0641\u0626 \u0627\u0644\u062a\u0631\u062f\u062f.',
+    vertexX: '\u0627\u0644\u0632\u064a\u0646\u0648 \u064a\u0643\u0627\u0641\u0626 \u0627\u0644\u062c\u0633\u0648\u0631 \u0625\u0644\u0649 \u0627\u0644\u0645\u062c\u0647\u0648\u0644.',
+    vertexR: '\u0627\u0644\u062c\u0630\u0631 \u064a\u064f\u0631\u0633\u064a \u0627\u0633\u062a\u0642\u0631\u0627\u0631 \u0627\u0644\u0645\u0643\u0639\u0628.',
+    vertexN: '\u0627\u0644\u0645\u062d\u0648\u0631 \u064a\u064f\u0636\u0627\u0639\u0641 \u0642\u0631\u0627\u0631\u0627\u062a \u0627\u0644\u062c\u0633\u0631.',
+    vertexQ: '\u0643\u0648\u0627\u0646\u062a\u0627 \u064a\u0643\u0627\u0641\u0626 \u0627\u0644\u0632\u062e\u0645 \u0633\u0631\u064a\u0639 \u0639\u062f\u0645 \u0627\u0644\u0627\u0633\u062a\u0642\u0631\u0627\u0631.',
+    vertexO: '\u0627\u0644\u0645\u062f\u0627\u0631 \u064a\u0643\u0627\u0641\u0626 \u0627\u0644\u062d\u0644\u0642\u0627\u062a \u0627\u0644\u0645\u0643\u0639\u0628\u0629 \u0627\u0644\u0645\u062a\u0648\u0627\u0632\u0646\u0629.',
+    vertexNeutral: '\u0631\u0623\u0633 \u0645\u062d\u0627\u064a\u062f.',
+    vshortH: '\u062a\u0646\u0627\u063a\u0645', vshortZ: '\u0632\u064a\u0646\u064a\u062b', vshortC: '\u0645\u062d\u0641\u0632', vshortT: '\u062a\u0648\u062a\u0631',
+    vshortP: '\u0646\u0628\u0636', vshortX: '\u0632\u064a\u0646\u0648', vshortR: '\u062c\u0630\u0631', vshortN: '\u0645\u062d\u0648\u0631', vshortQ: '\u0643\u0648\u0627\u0646\u062a\u0627', vshortO: '\u0645\u062f\u0627\u0631',
+    rankBasic: '\u0623\u0633\u0627\u0633\u064a',
+    rankEvolved: '\u0645\u062a\u0637\u0648\u0631',
+    rankMastered: '\u0645\u062a\u0642\u0646',
+    rankTranscended: '\u0645\u062a\u0639\u0627\u0644',
+    rankAbbr: ['\u0623', '\u0645\u062a', '\u0645\u0642', '\u0645\u062a\u0639'],
+    shapeTriangle: '\u0645\u062b\u0644\u062b',
+    shapeSquare: '\u0645\u0631\u0628\u0639',
+    shapePentagon: '\u0645\u062e\u0645\u0633',
+    shapeHexagon: '\u0645\u0633\u062f\u0633',
+    shapeCube: '\u0645\u0643\u0639\u0628',
+    shapeCuboid: '\u0645\u062a\u0648\u0627\u0632\u064a \u0645\u0633\u062a\u0637\u064a\u0644\u0627\u062a',
+    tierCore: '\u0623\u0633\u0627\u0633\u064a',
+    tierAdvanced: '\u0645\u062a\u0642\u062f\u0651\u0645',
+    miscTitle: '\u0633\u0627\u064a\u0643\u0644\u0633 \u0628\u0631\u0627\u064a\u0645 \u2014 \u0635\u0631\u0627\u0639 \u0627\u0644\u062c\u064a\u0646\u0648\u0645',
+    objectiveDefault: '\u0627\u062c\u062a\u064a\u0627\u0632 \u0627\u0644\u0637\u0628\u0642\u0629',
+    upgradeNone: '\u0644\u0627 \u062a\u0637\u0648\u064a\u0631\u0627\u062a \u0628\u0639\u062f',
+    upgradeStabilize: '\u062a\u062b\u0628\u064a\u062a',
+    upgradeStabilizeText: '\u062e\u0633\u0627\u0626\u0631 \u0627\u0644\u0646\u0638\u0627\u0645 \u062a\u0624\u0644\u0645 10% \u0623\u0642\u0644.',
+    upgradeResonance: '\u0631\u0646\u064a\u0646',
+    upgradeResonanceText: '\u0648\u0636\u0639\u064a\u0627\u062a \u0627\u0644\u062a\u0631\u062f\u062f \u062a\u0643\u062a\u0633\u0628 \u0634\u062d\u0646\u0629 \u0625\u0636\u0627\u0641\u064a\u0629.',
+    upgradeScaffold: '\u0633\u0642\u0627\u0644\u0629',
+    upgradeScaffoldText: '\u0648\u0636\u0639\u064a\u0627\u062a \u0627\u0644\u0628\u0646\u064a\u0629 \u062a\u0643\u062a\u0633\u0628 \u0634\u062d\u0646\u0629 \u0625\u0636\u0627\u0641\u064a\u0629.',
+    upgradeBridgeMemory: '\u0630\u0627\u0643\u0631\u0629 \u0627\u0644\u062c\u0633\u0631',
+    upgradeBridgeMemoryText: '\u0645\u0643\u0627\u0641\u0623\u0627\u062a \u0647\u062f\u0641 \u0627\u0644\u062c\u0633\u0631 \u0623\u0642\u0648\u0649.',
+    upgradeEntropyControl: '\u0627\u0644\u0633\u064a\u0637\u0631\u0629 \u0639\u0644\u0649 \u0627\u0644\u0627\u0646\u062a\u0631\u0648\u0628\u064a\u0627',
+    upgradeEntropyControlText: '\u0639\u0642\u0648\u0628\u0627\u062a \u0627\u0644\u0641\u0648\u0636\u0649 \u062a\u064f\u062e\u0641\u0651\u0641.',
+    objCoherence70: '\u0627\u0631\u0628\u062d \u0628\u062a\u0645\u0627\u0633\u0643 \u2265 0.70',
+    objCoherence70Hint: '\u0627\u0633\u062a\u062e\u062f\u0645 \u0623\u0644\u0641\u0629 \u0627\u0644\u0631\u0623\u0633 \u0648\u062a\u0648\u0627\u0641\u0642 \u0627\u0644\u062c\u0627\u0631 \u0627\u0644\u0635\u062f\u064a\u0642.',
+    objBridge2: '\u0636\u0639 \u0627\u0644\u062c\u0633\u0631 \u0645\u0631\u062a\u064a\u0646 \u0648\u062a\u062c\u0646\u0628 \u0627\u0644\u0627\u0646\u0647\u064a\u0627\u0631',
+    objBridge2Hint: '\u0627\u0644\u062c\u0633\u0631 \u064a\u064f\u062d\u0642\u0642 \u0627\u0633\u062a\u0642\u0631\u0627\u0631 \u0627\u0644\u0645\u062a\u0637\u0627\u0628\u0642\u0627\u062a \u0627\u0644\u0636\u0639\u064a\u0641\u0629 \u0648\u064a\u062d\u0645\u064a \u0627\u0644\u0623\u0646\u0645\u0627\u0637 \u0627\u0644\u0645\u062e\u062a\u0644\u0637\u0629.',
+    objChaosLow: '\u062d\u0627\u0641\u0638 \u0639\u0644\u0649 \u0645\u062e\u0627\u0637\u0631 \u0627\u0644\u0641\u0648\u0636\u0649 \u062f\u0648\u0646 0.20',
+    objChaosLowHint: '\u0627\u0633\u062a\u062e\u062f\u0645 \u0627\u0644\u0641\u0648\u0636\u0649 \u0641\u0642\u0637 \u0639\u0644\u0649 Tension \u0623\u0648 Pulse \u0623\u0648 Xeno \u0639\u0646\u062f\u0645\u0627 \u062a\u0624\u062a\u064a.',
+    objAdjacentPair: '\u0627\u0633\u062a\u0648\u0644\u0650 \u0631\u0623\u0633\u064a\u0646 \u0645\u062a\u062c\u0627\u0648\u0631\u064a\u0646',
+    objAdjacentPairHint: '\u0627\u0644\u062e\u0644\u0627\u064a\u0627 \u0627\u0644\u0635\u062f\u064a\u0642\u0629 \u0627\u0644\u0645\u062a\u062c\u0627\u0648\u0631\u0629 \u062a\u064f\u0636\u062e\u0651\u0645 \u0646\u062a\u064a\u062c\u0629 \u0627\u0644\u0637\u0628\u0642\u0629.',
+    objMargin2: '\u0627\u0631\u0628\u062d \u0628\u0647\u0627\u0645\u0634 \u2265 2.00',
+    objMargin2Hint: '\u0627\u062e\u062a\u0631 \u0645\u0637\u0627\u0628\u0642\u0627\u062a \u0631\u0623\u0633-\u0639\u0646\u0635\u0631 \u0642\u0648\u064a\u0629 \u0642\u0628\u0644 \u0623\u0646 \u064a\u062d\u062c\u0628\u0647\u0627 \u0627\u0644\u0646\u0638\u0627\u0645.',
+    previewAffinity: '\u0627\u0644\u0623\u0644\u0641\u0629',
+    previewProjected: '\u0627\u0644\u0645\u062a\u0648\u0642\u0639',
+  },
+  fr: {
+    label: 'Fran\u00e7ais', flag: 'FR',
+    title: 'Comment jouer',
+    skip: 'Passer',
+    goal: 'But : Poussez votre g\u00e9nome \u00e0 0.95 avant que le Syst\u00e8me ne le r\u00e9duise \u00e0 0.05.',
+    elements: '\u00c9l\u00e9ments : H=Harmonie, F=Fr\u00e9quence, S=Structure, C=Chaos, B=Pont. Chaque sommet favorise certains \u00e9l\u00e9ments (survol pour voir l\'affinit\u00e9).',
+    scoring: 'Score : Chaque placement est not\u00e9 : compatibilit\u00e9 des \u00e9l\u00e9ments avec les voisins + affinit\u00e9 du sommet + charge. Meilleur score = g\u00e9nome \u00e9volue en votre faveur.',
+    loser: 'Le perdant choisit la forme suivante. Les formes de base sont disponibles d\u00e8s le d\u00e9but; Cube et Cubo\u00efde se d\u00e9bloquent en jeu avanc\u00e9.',
+    headerGenome: 'G\u00e9nome', headerBest: 'Meilleur', headerCoherence: 'Coh\u00e9rence',
+    headerObjective: 'Objectif', headerUpgrade: 'Am\u00e9liorations', headerNone: 'aucun',
+    headerLayer: 'Couche', headerCombo: 'Combo',
+    headerTurnYour: 'Votre tour', headerTurnSystem: 'Tour du Syst\u00e8me',
+    headerPlayer: 'J', headerSystem: 'S',
+    headerTurn: 'Tour',
+    headerPressure: 'Pression', headerPressureLeft: 'restant',
+    tutorialKicker: 'Premi\u00e8re minute',
+    tutorialSteps: [
+      '\u00c9tape 1/5 : s\u00e9lectionnez un sommet vide sur la forme.',
+      '\u00c9tape 2/5 : survolez H/F/S/C/B pour pr\u00e9visualiser le changement de marge.',
+      '\u00c9tape 3/5 : placez un \u00e9l\u00e9ment. La signification du sommet et la compatibilit\u00e9 des voisins comptent.',
+      '\u00c9tape 4/5 : regardez le Syst\u00e8me r\u00e9pondre. Il \u00e9value \u00e0 la fois le sommet et l\'\u00e9l\u00e9ment.',
+      '\u00c9tape 5/5 : terminez la couche. Le perdant choisit le prochain champ de bataille.',
+    ],
+    statusAwaitingStart: 'Appuyez sur D\u00e9marrer le cycle pour commencer.',
+    statusSelectVertex: 'S\u00e9lectionnez un sommet vide. La signification du sommet compte maintenant.',
+    statusSelected: 'S\u00e9lectionn\u00e9 {0}. Choisissez un \u00e9l\u00e9ment ; survolez pour pr\u00e9visualiser.',
+    statusSystemTurn: 'Le Syst\u00e8me \u00e9value sommet + \u00e9l\u00e9ment + pression des voisins...',
+    btnStartCycle: 'D\u00e9marrer le cycle',
+    btnHowToPlay: 'Comment jouer',
+    btnSoundOn: '\u266a Son activ\u00e9',
+    btnSoundOff: '\u266a Son coup\u00e9',
+    btnResetSave: 'R\u00e9initialiser la sauvegarde',
+    btnPlayAgain: '[~] Rejouer',
+    btnResume: '> Reprendre',
+    btnRestart: '[~] Red\u00e9marrer',
+    btnClose: 'Fermer',
+    btnReturn: 'Retour',
+    btnCloseTab: 'Fermer l\u2019onglet',
+    closeTitle: 'Cycle ferm\u00e9',
+    everyEndSeed: 'Chaque fin est une graine.',
+    closeDesc: 'Progression enregistr\u00e9e. Vous pouvez fermer cet onglet ou revenir au cycle.',
+    closeDescManual: 'Si le navigateur ne se ferme pas automatiquement, vous pouvez fermer cet onglet en toute s\u00e9curit\u00e9. Chaque fin est une graine.',
+    btnMuteAudio: '\u266a Activer/D\u00e9sactiver le son',
+    btnSystemChoose: 'Laisser le Syst\u00e8me choisir',
+    btnContinue: 'Continuer',
+    tipSystemChoose: 'Confiez le choix de la prochaine forme au Syst\u00e8me.',
+    tipContinue: 'Continuer vers la forme choisie par le Syst\u00e8me.',
+    feedbackSelected: 'S\u00e9lectionn\u00e9 {0}. Survolez un \u00e9l\u00e9ment pour pr\u00e9visualiser.',
+    feedbackPlaced: '{0} plac\u00e9 : marge {1}{2}',
+    feedbackBridge: 'Le Pont stabilise le motif ({0})',
+    feedbackChaosRise: 'Le Chaos ajoute de la puissance, mais le risque augmente.',
+    feedbackChaosCtrl: 'Le Chaos contr\u00f4l\u00e9 plie la couche.',
+    feedbackPerfectAff: 'Affinit\u00e9 parfaite : {0} est \u00e0 sa place ici.',
+    feedbackSystemMove: 'Le Syst\u00e8me ({0}) r\u00e9pond avec {1} sur {2}.',
+    feedbackRankUp: '{0} a atteint {1}!',
+    feedbackScars: 'Cicatrices de couche : {0} affinit\u00e9 +{1}%',
+    feedbackUpgraded: '{0} am\u00e9lior\u00e9 au niveau {1}.',
+    feedbackTutorialDone: 'Tutoriel termin\u00e9. Fa\u00e7onnez le g\u00e9nome.',
+    feedbackAudioOff: 'Son coup\u00e9.',
+    feedbackAudioOn: 'Son activ\u00e9.',
+    feedbackConvergence: 'Le cycle a converg\u00e9 avant de s\u2019allonger.',
+    transPlayerWin: 'Vous imprimez le g\u00e9nome',
+    transSystemWin: 'Le Syst\u00e8me supprime la graine',
+    transHybrid: 'Instabilit\u00e9 hybride',
+    transObjective: '<b>Objectif :</b>',
+    transCompleted: 'r\u00e9ussi',
+    transMissed: 'manqu\u00e9',
+    transAffix: '<b>Affixe :</b>',
+    transAI: '<b>IA :</b>',
+    transGenome: '<b>G\u00e9nome :</b>',
+    transLayerScore: '<b>Score de couche :</b>',
+    transYou: 'Vous',
+    transSystemScore: 'Syst\u00e8me',
+    transMargin: 'Marge',
+    transSignals: '<b>Signaux :</b>',
+    transHarmony: 'Harmonie',
+    transTension: 'Tension',
+    transBridge2: 'Pont',
+    transChaosRisk: 'Risque de chaos',
+    transPressure: '<b>Pression :</b>',
+    transConverged: 'cycle converg\u00e9',
+    transReason: 'raison :',
+    convergenceReasonPressure: 'limite de pression',
+    convergenceReasonTight: 'marge serr\u00e9e',
+    convergenceReasonHybrid: 'instabilit\u00e9 hybride',
+    convergenceReasonNormal: 'r\u00e9solution normale',
+    transDivObjective: 'R\u00e9compense d\'objectif',
+    transDivShape: 'Prochaine forme',
+    transSystemChoice: 'Le Syst\u00e8me choisit {0}',
+    transAdvanced: 'CUBIQUE AVANC\u00c9',
+    transCore: 'BASE',
+    gameoverPlayerTitle: 'L\'Organisme est n\u00e9',
+    gameoverPlayerDesc: 'Votre g\u00e9nome ({0}) a pr\u00e9valu. La cr\u00e9ature prend votre forme.',
+    gameoverSystemTitle: 'La Graine s\'est effondr\u00e9e',
+    gameoverSystemDesc: 'Votre g\u00e9nome ({0}) a \u00e9t\u00e9 submerg\u00e9. Le Syst\u00e8me a corrompu la graine.',
+    helpToggle: '[?] Comment jouer',
+    helpKeys: '<p><kbd>H</kbd> <kbd>F</kbd> <kbd>S</kbd> <kbd>C</kbd> <kbd>B</kbd> placer des \u00e9l\u00e9ments apr\u00e8s avoir s\u00e9lectionn\u00e9 un sommet.</p>',
+    startKicker: 'CONFLIT DE G\u00c9NOME',
+    startTitle: 'CYCLUS',
+    startSubtitle: 'Un jeu de strat\u00e9gie symbolique o\u00f9 chaque mouvement remod\u00e8le un g\u00e9nome vivant \u2014 et perdre vous permet de choisir le prochain champ de bataille.',
+    startRule1: 'S\u00e9lectionnez un sommet vide.',
+    startRule2: 'Choisissez H/F/S/C/B. Survolez d\'abord pour pr\u00e9visualiser le changement de score.',
+    startRule3: 'Triangle, Carr\u00e9, Pentagone et Hexagone sont disponibles d\u00e8s le d\u00e9but.',
+    startRule4: 'Le jeu avanc\u00e9 d\u00e9bloque les champs de bataille Cube et Cubo\u00efde.',
+    startRule5: 'La pression du cycle r\u00e9sout les couches longues ou ind\u00e9cises avant qu\u2019elles ne tra\u00eenent.',
+    loadingSub: 'Formes de base d\u00e8s le d\u00e9but \u00b7 mode cubique avanc\u00e9 plus tard',
+    version: 'v3.7.1-github-split-public-formula-hiding',
+    pauseTitle: '[||] En pause',
+    elemHarmony: 'Harmonie',
+    elemHarmonyRole: 'stabilise les motifs amicaux',
+    elemFrequency: 'Fr\u00e9quence',
+    elemFrequencyRole: 'amplifie le tempo et la pression',
+    elemStructure: 'Structure',
+    elemStructureRole: 'ancre un contr\u00f4le r\u00e9silient',
+    elemChaos: 'Chaos',
+    elemChaosRole: 'perturbe les ennemis avec du risque',
+    elemBridge: 'Pont',
+    elemBridgeRole: 'connecte les correspondances faibles en s\u00e9curit\u00e9',
+    affixResonant: 'R\u00e9sonant',
+    affixResonantDesc: 'Les scores de compatibilit\u00e9 \u00e9lev\u00e9s (>0.80) sont doubl\u00e9s.',
+    affixVolatile: 'Volatil',
+    affixVolatileDesc: 'Le Chaos a des effets secondaires : 15% de chance de tir ami.',
+    affixEcho: '\u00c9cho',
+    affixEchoDesc: 'Les \u00e9l\u00e9ments adjacents correspondants gagnent +0.20 de bonus.',
+    affixBarren: 'St\u00e9rile',
+    affixBarrenDesc: 'Toutes les charges sont r\u00e9duites de 20%.',
+    affixHarmonicStorm: 'Temp\u00eate Harmonique',
+    affixHarmonicStormDesc: 'H et C \u00e9changent leurs r\u00f4les de compatibilit\u00e9 pour cette couche.',
+    affixMirage: 'Mirage',
+    affixMirageDesc: 'L\'affinit\u00e9 des sommets est randomis\u00e9e chaque tour.',
+    affixFortress: 'Forteresse',
+    affixFortressDesc: 'Le Syst\u00e8me gagne +0.15 de charge sur tous les placements.',
+    affixCascade: 'Cascade',
+    affixCascadeDesc: 'Placer un \u00e9l\u00e9ment d\u00e9clenche un placement adjacent gratuit (50% de charge).',
+    affixGravityWell: 'Puits de Gravitation',
+    affixGravityWellDesc: 'Le premier placement de chaque tour attire le suivant vers le sommet oppos\u00e9.',
+    aiAggressor: 'Agresseur',
+    aiAggressorDesc: 'Cible les sommets contr\u00f4l\u00e9s par le joueur de mani\u00e8re agressive.',
+    aiDefender: 'D\u00e9fenseur',
+    aiDefenderDesc: 'Construit autour des clusters existants du Syst\u00e8me.',
+    aiController: 'Contr\u00f4leur',
+    aiControllerDesc: 'Priorise l\'affinit\u00e9 des sommets et le contr\u00f4le du chaos.',
+    aiOpportunist: 'Opportuniste',
+    aiOpportunistDesc: 'Exploite les motifs faibles du joueur.',
+    vertexH: 'L\'Harmonie r\u00e9compense la r\u00e9sonance stable.',
+    vertexZ: 'Le Z\u00e9nith r\u00e9compense la structure ordonn\u00e9e.',
+    vertexC: 'Le Catalyseur r\u00e9compense les ponts et le tempo.',
+    vertexT: 'La Tension r\u00e9compense le chaos contr\u00f4l\u00e9.',
+    vertexP: 'La Pouls r\u00e9compense la fr\u00e9quence.',
+    vertexX: 'Le X\u00e9no r\u00e9compense les ponts vers l\'inconnu.',
+    vertexR: 'La Racine ancre la stabilit\u00e9 cubique.',
+    vertexN: 'Le Nexus multiplie les d\u00e9cisions de pont.',
+    vertexQ: 'Le Quanta r\u00e9compense l\'\u00e9lan rapide instable.',
+    vertexO: 'L\'Orbite r\u00e9compense les boucles cubiques \u00e9quilibr\u00e9es.',
+    vertexNeutral: 'Sommet neutre.',
+    vshortH: 'Harmonie', vshortZ: 'Z\u00e9nith', vshortC: 'Catalyseur', vshortT: 'Tension',
+    vshortP: 'Pouls', vshortX: 'X\u00e9no', vshortR: 'Racine', vshortN: 'Nexus', vshortQ: 'Quanta', vshortO: 'Orbite',
+    rankBasic: 'De base',
+    rankEvolved: '\u00c9volu\u00e9',
+    rankMastered: 'Ma\u00eetris\u00e9',
+    rankTranscended: 'Transcend\u00e9',
+    rankAbbr: ['B', '\u00c9', 'M', 'T'],
+    shapeTriangle: 'Triangle',
+    shapeSquare: 'Carr\u00e9',
+    shapePentagon: 'Pentagone',
+    shapeHexagon: 'Hexagone',
+    shapeCube: 'Cube',
+    shapeCuboid: 'Cubo\u00efde',
+    tierCore: 'base',
+    tierAdvanced: 'avanc\u00e9',
+    miscTitle: 'CYCLUS Prime \u2014 Conflit de G\u00e9nome',
+    objectiveDefault: 'survivre \u00e0 la couche',
+    upgradeNone: 'Aucune am\u00e9lioration',
+    upgradeStabilize: 'Stabiliser',
+    upgradeStabilizeText: 'Les pertes du Syst\u00e8me font 10% moins mal.',
+    upgradeResonance: 'R\u00e9sonance',
+    upgradeResonanceText: 'Les placements de Fr\u00e9quence gagnent une charge suppl\u00e9mentaire.',
+    upgradeScaffold: '\u00c9chafaudage',
+    upgradeScaffoldText: 'Les placements de Structure gagnent une charge suppl\u00e9mentaire.',
+    upgradeBridgeMemory: 'M\u00e9moire de Pont',
+    upgradeBridgeMemoryText: 'Les bonus d\'objectif de Pont sont plus forts.',
+    upgradeEntropyControl: 'Contr\u00f4le d\'Entropie',
+    upgradeEntropyControlText: 'Les p\u00e9nalit\u00e9s de Chaos sont att\u00e9nu\u00e9es.',
+    objCoherence70: 'Gagnez avec une coh\u00e9rence \u2265 0.70',
+    objCoherence70Hint: 'Utilisez l\'affinit\u00e9 des sommets et la compatibilit\u00e9 des voisins amicaux.',
+    objBridge2: 'Placez Pont deux fois et \u00e9vitez l\'effondrement',
+    objBridge2Hint: 'Le Pont stabilise les correspondances faibles et prot\u00e8ge les motifs mixtes.',
+    objChaosLow: 'Maintenez le risque de Chaos sous 0.20',
+    objChaosLowHint: 'Utilisez le Chaos seulement sur Tension, Pulse ou Xeno quand cela rapporte.',
+    objAdjacentPair: 'Capturez deux sommets adjacents',
+    objAdjacentPairHint: 'Les cellules amicales adjacentes amplifient le score de la couche.',
+    objMargin2: 'Gagnez avec une marge \u2265 2.00',
+    objMargin2Hint: 'Choisissez des correspondances sommet-\u00e9l\u00e9ment fortes avant que le Syst\u00e8me ne les bloque.',
+    previewAffinity: 'Affinit\u00e9',
+    previewProjected: 'Projet\u00e9',
+  },
+  zh: {
+    label: '\u4e2d\u6587', flag: 'ZH',
+    title: '\u73a9\u6cd5\u8bf4\u660e',
+    skip: '\u8df3\u8fc7',
+    goal: '\u76ee\u6807\uff1a\u5c06\u4f60\u7684\u57fa\u56e0\u7ec4\u63d0\u5347\u81f30.95\uff0c\u9632\u6b62\u7cfb\u7edf\u5c06\u5176\u964d\u81f30.05\u3002',
+    elements: '\u5143\u7d20\uff1aH=\u548c\u8c10, F=\u9891\u7387, S=\u7ed3\u6784, C=\u6df7\u6c8c, B=\u6865\u6881\u3002\u6bcf\u4e2a\u9876\u70b9\u504f\u597d\u7279\u5b9a\u5143\u7d20\uff08\u60ac\u505c\u67e5\u770b\u4eb2\u548c\u5ea6\uff09\u3002',
+    scoring: '\u8bc4\u5206\uff1a\u6bcf\u6b21\u653e\u7f6e\u6839\u636e\u5143\u7d20\u517c\u5bb9\u6027\uff08\u4e0e\u90bb\u5c45\u70b9\uff09+ \u9876\u70b9\u4eb2\u548c\u5ea6 + \u5145\u80fd\u503c\u8bc4\u5206\u3002\u8bc4\u5206\u66f4\u9ad8 = \u57fa\u56e0\u7ec4\u5411\u4f60\u503e\u659c\u3002',
+    loser: '\u8f93\u5bb6\u9009\u62e9\u4e0b\u4e00\u5f62\u72b6\u3002\u6838\u5fc3\u5f62\u72b6\u4ece\u4e00\u5f00\u59cb\u5c31\u53ef\u7528\uff1b\u7acb\u65b9\u4f53\u548c\u957f\u65b9\u4f53\u5728\u9ad8\u7ea7\u5c42\u89e3\u9501\u3002',
+    headerGenome: '\u57fa\u56e0\u7ec4', headerBest: '\u6700\u4f73', headerCoherence: '\u76f8\u5e72\u6027',
+    headerObjective: '\u76ee\u6807', headerUpgrade: '\u5347\u7ea7', headerNone: '\u65e0',
+    headerLayer: '\u5c42', headerCombo: '\u8fde\u51fb',
+    headerTurnYour: '\u4f60\u7684\u56de\u5408', headerTurnSystem: '\u7cfb\u7edf\u7684\u56de\u5408',
+    headerPlayer: '\u73a9', headerSystem: '\u7cfb',
+    headerTurn: '\u56de\u5408',
+    headerPressure: '\u5faa\u73af\u538b\u529b', headerPressureLeft: '\u5269\u4f59',
+    tutorialKicker: '\u7b2c\u4e00\u5206\u949f',
+    tutorialSteps: [
+      '\u6b65\u9aa4 1/5\uff1a\u5728\u5f62\u72b6\u4e0a\u9009\u62e9\u4e00\u4e2a\u7a7a\u9876\u70b9\u3002',
+      '\u6b65\u9aa4 2/5\uff1a\u60ac\u505c H/F/S/C/B \u9884\u89c8\u8fb9\u9645\u53d8\u5316\u3002',
+      '\u6b65\u9aa4 3/5\uff1a\u653e\u7f6e\u5143\u7d20\u3002\u9876\u70b9\u610f\u4e49\u548c\u90bb\u5c45\u517c\u5bb9\u6027\u5f88\u91cd\u8981\u3002',
+      '\u6b65\u9aa4 4/5\uff1a\u89c2\u5bdf\u7cfb\u7edf\u54cd\u5e94\u3002\u5b83\u540c\u65f6\u8bc4\u4f30\u9876\u70b9\u548c\u5143\u7d20\u3002',
+      '\u6b65\u9aa4 5/5\uff1a\u5b8c\u6210\u5c42\u3002\u8f93\u5bb6\u9009\u62e9\u4e0b\u4e00\u4e2a\u6218\u573a\u3002',
+    ],
+    statusAwaitingStart: '\u8bf7\u6309\u201c\u5f00\u59cb\u5faa\u73af\u201d\u4ee5\u5f00\u59cb\u3002',
+    statusSelectVertex: '\u8bf7\u9009\u62e9\u4e00\u4e2a\u7a7a\u9876\u70b9\u3002\u9876\u70b9\u7684\u610f\u4e49\u73b0\u5728\u5f88\u91cd\u8981\u3002',
+    statusSelected: '\u5df2\u9009\u62e9 {0}\u3002\u9009\u62e9\u5143\u7d20\uff1b\u60ac\u505c\u4ee5\u9884\u89c8\u3002',
+    statusSystemTurn: '\u7cfb\u7edf\u6b63\u5728\u8bc4\u4f30\u9876\u70b9 + \u5143\u7d20 + \u90bb\u5c45\u538b\u529b...',
+    btnStartCycle: '\u5f00\u59cb\u5faa\u73af',
+    btnHowToPlay: '\u73a9\u6cd5\u8bf4\u660e',
+    btnSoundOn: '\u266a \u5f00\u542f\u97f3\u9891',
+    btnSoundOff: '\u266a \u5173\u95ed\u97f3\u9891',
+    btnResetSave: '\u91cd\u7f6e\u5b58\u6863',
+    btnPlayAgain: '[\u007e] \u518d\u73a9\u4e00\u6b21',
+    btnResume: '> \u7ee7\u7eed',
+    btnRestart: '[\u007e] \u91cd\u65b0\u5f00\u59cb',
+    btnClose: '\u5173\u95ed',
+    btnReturn: '\u8fd4\u56de',
+    btnCloseTab: '\u5173\u95ed\u6807\u7b7e\u9875',
+    closeTitle: '\u5faa\u73af\u5df2\u5173\u95ed',
+    everyEndSeed: '\u6bcf\u4e00\u6b21\u7ed3\u675f\uff0c\u90fd\u662f\u4e00\u7c92\u79cd\u5b50\u3002',
+    closeDesc: '\u8fdb\u5ea6\u5df2\u4fdd\u5b58\u3002\u4f60\u53ef\u4ee5\u5173\u95ed\u6b64\u6807\u7b7e\u9875\uff0c\u6216\u8fd4\u56de\u5faa\u73af\u3002',
+    closeDescManual: '\u5982\u679c\u6d4f\u89c8\u5668\u6ca1\u6709\u81ea\u52a8\u5173\u95ed\uff0c\u4f60\u73b0\u5728\u53ef\u4ee5\u5b89\u5168\u5730\u5173\u95ed\u6b64\u6807\u7b7e\u9875\u3002\u6bcf\u4e00\u6b21\u7ed3\u675f\uff0c\u90fd\u662f\u4e00\u7c92\u79cd\u5b50\u3002',
+    btnMuteAudio: '\u266a \u5207\u6362\u97f3\u9891',
+    btnSystemChoose: '\u8ba9\u7cfb\u7edf\u9009\u62e9',
+    btnContinue: '\u7ee7\u7eed',
+    tipSystemChoose: '\u5c06\u4e0b\u4e00\u5f62\u72b6\u7684\u51b3\u7b56\u6743\u4ea4\u7ed9\u7cfb\u7edf\u3002',
+    tipContinue: '\u7ee7\u7eed\u5230\u7cfb\u7edf\u9009\u62e9\u7684\u5f62\u72b6\u3002',
+    feedbackSelected: '\u5df2\u9009\u62e9 {0}\u3002\u60ac\u505c\u5143\u7d20\u4ee5\u9884\u89c8\u3002',
+    feedbackPlaced: '\u5df2\u653e\u7f6e {0}\uff1a\u8fb9\u9645 {1}{2}',
+    feedbackBridge: '\u6865\u6881\u7a33\u5b9a\u4e86\u6a21\u5f0f ({0})',
+    feedbackChaosRise: '\u6df7\u6c8c\u589e\u52a0\u4e86\u529b\u91cf\uff0c\u4f46\u98ce\u9669\u4e0a\u5347\u3002',
+    feedbackChaosCtrl: '\u53ef\u63a7\u6df7\u6c8c\u5f2f\u66f2\u4e86\u5c42\u3002',
+    feedbackPerfectAff: '\u5b8c\u7f8e\u4eb2\u548c\u5ea6\uff1a{0} \u5c5e\u4e8e\u8fd9\u91cc\u3002',
+    feedbackSystemMove: '\u7cfb\u7edf ({0}) \u4ee5 {1} \u56de\u5e94\u5728 {2} \u4e0a\u3002',
+    feedbackRankUp: '{0} \u8fbe\u5230\u4e86 {1}\uff01',
+    feedbackScars: '\u5c42\u75d5\u8ff9\uff1a{0} \u4eb2\u548c\u5ea6 +{1}%',
+    feedbackUpgraded: '{0} \u5df2\u5347\u7ea7\u5230 {1}\u3002',
+    feedbackTutorialDone: '\u6559\u7a0b\u5b8c\u6210\u3002\u5851\u9020\u57fa\u56e0\u7ec4\u3002',
+    feedbackAudioOff: '\u97f3\u9891\u5df2\u5173\u95ed\u3002',
+    feedbackAudioOn: '\u97f3\u9891\u5df2\u5f00\u542f\u3002',
+    feedbackConvergence: '\u5faa\u73af\u5728\u62d6\u5ef6\u524d\u5df2\u6536\u655b\u3002',
+    transPlayerWin: '\u4f60\u5370\u8bb0\u57fa\u56e0\u7ec4',
+    transSystemWin: '\u7cfb\u7edf\u627c\u5236\u4e86\u79cd\u5b50',
+    transHybrid: '\u6df7\u5408\u4e0d\u7a33\u5b9a\u6027',
+    transObjective: '<b>\u76ee\u6807\uff1a</b>',
+    transCompleted: '\u5df2\u5b8c\u6210',
+    transMissed: '\u5df2\u9519\u8fc7',
+    transAffix: '<b>\u5c5e\u6027\uff1a</b>',
+    transAI: '<b>\u4eba\u5de5\u667a\u80fd\uff1a</b>',
+    transGenome: '<b>\u57fa\u56e0\u7ec4\uff1a</b>',
+    transLayerScore: '<b>\u5c42\u5f97\u5206\uff1a</b>',
+    transYou: '\u4f60',
+    transSystemScore: '\u7cfb\u7edf',
+    transMargin: '\u8fb9\u9645',
+    transSignals: '<b>\u4fe1\u53f7\uff1a</b>',
+    transHarmony: '\u548c\u8c10',
+    transTension: '\u7d27\u5f20',
+    transBridge2: '\u6865\u6881',
+    transChaosRisk: '\u6df7\u6c8c\u98ce\u9669',
+    transPressure: '<b>\u538b\u529b\uff1a</b>',
+    transConverged: '\u5faa\u73af\u6536\u655b',
+    transReason: '\u539f\u56e0\uff1a',
+    convergenceReasonPressure: '\u538b\u529b\u4e0a\u9650',
+    convergenceReasonTight: '\u5dee\u8ddd\u8fc7\u5c0f',
+    convergenceReasonHybrid: '\u6df7\u5408\u4e0d\u7a33\u5b9a',
+    convergenceReasonNormal: '\u6b63\u5e38\u89e3\u6790',
+    transDivObjective: '\u76ee\u6807\u5956\u52b1',
+    transDivShape: '\u4e0b\u4e00\u5f62\u72b6',
+    transSystemChoice: '\u7cfb\u7edf\u9009\u62e9\u4e86 {0}',
+    transAdvanced: '\u9ad8\u7ea7\u7acb\u65b9',
+    transCore: '\u6838\u5fc3',
+    gameoverPlayerTitle: '\u6709\u673a\u4f53\u8bde\u751f\u4e86',
+    gameoverPlayerDesc: '\u4f60\u7684\u57fa\u56e0\u7ec4 ({0}) \u83b7\u80dc\u3002\u751f\u7269\u91c7\u7528\u4e86\u4f60\u7684\u5f62\u6001\u3002',
+    gameoverSystemTitle: '\u79cd\u5b50\u5d29\u6e83\u4e86',
+    gameoverSystemDesc: '\u4f60\u7684\u57fa\u56e0\u7ec4 ({0}) \u88ab\u538b\u5012\u3002\u7cfb\u7edf\u8150\u5316\u4e86\u79cd\u5b50\u3002',
+    helpToggle: '[?] \u73a9\u6cd5\u8bf4\u660e',
+    helpKeys: '<p><kbd>H</kbd> <kbd>F</kbd> <kbd>S</kbd> <kbd>C</kbd> <kbd>B</kbd> \u5728\u9009\u62e9\u9876\u70b9\u540e\u653e\u7f6e\u5143\u7d20\u3002</p>',
+    startKicker: '\u57fa\u56e0\u7ec4\u51b2\u7a81',
+    startTitle: '\u8d5b\u514b\u52d2\u65af',
+    startSubtitle: '\u4e00\u6b3e\u8c61\u5f81\u6027\u7b56\u7565\u6e38\u620f\uff0c\u6bcf\u4e00\u6b65\u90fd\u91cd\u5851\u6d3b\u7684\u57fa\u56e0\u7ec4 \u2014 \u800c\u8f93\u6389\u8ba9\u4f60\u9009\u62e9\u4e0b\u4e00\u4e2a\u6218\u573a\u3002',
+    startRule1: '\u9009\u62e9\u4e00\u4e2a\u7a7a\u9876\u70b9\u3002',
+    startRule2: '\u9009\u62e9 H/F/S/C/B\u3002\u5148\u60ac\u505c\u4ee5\u9884\u89c8\u5f97\u5206\u53d8\u5316\u3002',
+    startRule3: '\u4e09\u89d2\u5f62\u3001\u6b63\u65b9\u5f62\u3001\u4e94\u89d2\u5f62\u548c\u516d\u89d2\u5f62\u4ece\u4e00\u5f00\u59cb\u5c31\u53ef\u7528\u3002',
+    startRule4: '\u9ad8\u7ea7\u73a9\u6cd5\u89e3\u9501\u7acb\u65b9\u4f53\u548c\u957f\u65b9\u4f53\u6218\u573a\u3002',
+    startRule5: '\u5faa\u73af\u538b\u529b\u4f1a\u5728\u62d6\u5ef6\u524d\u89e3\u6790\u8fc7\u957f\u6216\u672a\u51b3\u5c42\u3002',
+    loadingSub: '\u6838\u5fc3\u5f62\u72b6\u4ece\u5f00\u59cb \u00b7 \u9ad8\u7ea7\u7acb\u65b9\u6a21\u5f0f\u4e4b\u540e',
+    version: 'v3.7.1-github-split-public-formula-hiding',
+    pauseTitle: '[||] \u6682\u505c',
+    elemHarmony: '\u548c\u8c10',
+    elemHarmonyRole: '\u7a33\u5b9a\u53cb\u597d\u6a21\u5f0f',
+    elemFrequency: '\u9891\u7387',
+    elemFrequencyRole: '\u653e\u5927\u8282\u594f\u548c\u538b\u529b',
+    elemStructure: '\u7ed3\u6784',
+    elemStructureRole: '\u951a\u5b9a\u5f39\u6027\u63a7\u5236',
+    elemChaos: '\u6df7\u6c8c',
+    elemChaosRole: '\u4ee5\u98ce\u9669\u9686\u538b\u654c\u4eba',
+    elemBridge: '\u6865\u6881',
+    elemBridgeRole: '\u5b89\u5168\u8fde\u63a5\u5f31\u5339\u914d',
+    affixResonant: '\u5171\u632f',
+    affixResonantDesc: '\u9ad8\u517c\u5bb9\u6027\u5f97\u5206 (>0.80) \u7ffb\u500d\u3002',
+    affixVolatile: '\u4e0d\u7a33\u5b9a',
+    affixVolatileDesc: '\u6df7\u6c8c\u6709\u526f\u4f5c\u7528\uff1a15% \u53cb\u519b\u706b\u529b\u3002',
+    affixEcho: '\u56de\u58f0',
+    affixEchoDesc: '\u5339\u914d\u7684\u90bb\u8fd1\u5143\u7d20\u83b7\u5f97 +0.20 \u52a0\u6210\u3002',
+    affixBarren: '\u8d2b\u7620',
+    affixBarrenDesc: '\u6240\u6709\u5145\u80fd\u503c\u51cf\u5c11 20%\u3002',
+    affixHarmonicStorm: '\u548c\u8c10\u98ce\u66b4',
+    affixHarmonicStormDesc: 'H \u548c C \u5728\u6b64\u5c42\u4ea4\u6362\u517c\u5bb9\u6027\u89d2\u8272\u3002',
+    affixMirage: '\u5e7b\u6655',
+    affixMirageDesc: '\u6bcf\u56de\u5408\u9876\u70b9\u4eb2\u548c\u5ea6\u968f\u673a\u5316\u3002',
+    affixFortress: '\u8981\u585e',
+    affixFortressDesc: '\u7cfb\u7edf\u5728\u6240\u6709\u653e\u7f6e\u4e0a\u83b7\u5f97 +0.15 \u5145\u80fd\u3002',
+    affixCascade: '\u6d41\u6c34',
+    affixCascadeDesc: '\u653e\u7f6e\u5143\u7d20\u89e6\u53d1\u514d\u8d39\u90bb\u8fd1\u653e\u7f6e\uff0850% \u5145\u80fd\uff09\u3002',
+    affixGravityWell: '\u91cd\u529b\u4e95',
+    affixGravityWellDesc: '\u6bcf\u56de\u5408\u7b2c\u4e00\u6b21\u653e\u7f6e\u5c06\u4e0b\u4e00\u6b21\u62c9\u5411\u5bf9\u7acb\u9876\u70b9\u3002',
+    aiAggressor: '\u653b\u51fb\u8005',
+    aiAggressorDesc: '\u6fc0\u8fdb\u5730\u9488\u5bf9\u73a9\u5bb6\u63a7\u5236\u7684\u9876\u70b9\u3002',
+    aiDefender: '\u9632\u5fa1\u8005',
+    aiDefenderDesc: '\u56f4\u7ed5\u73b0\u6709\u7cfb\u7edf\u96c6\u7fa4\u5efa\u8bbe\u3002',
+    aiController: '\u63a7\u5236\u8005',
+    aiControllerDesc: '\u4f18\u5148\u8003\u8651\u9876\u70b9\u4eb2\u548c\u5ea6\u548c\u6df7\u6c8c\u63a7\u5236\u3002',
+    aiOpportunist: '\u673a\u4f1a\u4e3b\u4e49\u8005',
+    aiOpportunistDesc: '\u5229\u7528\u73a9\u5bb6\u7684\u5f31\u70b9\u6a21\u5f0f\u3002',
+    vertexH: '\u548c\u8c10\u5956\u52b1\u7a33\u5b9a\u5171\u632f\u3002',
+    vertexZ: '\u5c16\u9876\u5956\u52b1\u6709\u5e8f\u7ed3\u6784\u3002',
+    vertexC: '\u50ac\u5316\u5242\u5956\u52b1\u6865\u6881\u548c\u8282\u594f\u3002',
+    vertexT: '\u7d27\u5f20\u5956\u52b1\u53ef\u63a7\u6df7\u6c8c\u3002',
+    vertexP: '\u8109\u51b2\u5956\u52b1\u9891\u7387\u3002',
+    vertexX: '\u5f02\u514b\u5956\u52b1\u8fde\u63a5\u672a\u77e5\u7684\u6865\u6881\u3002',
+    vertexR: '\u6839\u57fa\u951a\u5b9a\u7acb\u65b9\u7a33\u5b9a\u6027\u3002',
+    vertexN: '\u4e2d\u67a2\u4e58\u6570\u6865\u6881\u51b3\u7b56\u3002',
+    vertexQ: '\u91cf\u5b50\u5956\u52b1\u5feb\u901f\u4e0d\u7a33\u5b9a\u52a8\u91cf\u3002',
+    vertexO: '\u8f68\u9053\u5956\u52b1\u5e73\u8861\u7acb\u65b9\u5faa\u73af\u3002',
+    vertexNeutral: '\u4e2d\u7acb\u9876\u70b9\u3002',
+    vshortH: '\u548c\u8c10', vshortZ: '\u5c16\u9876', vshortC: '\u50ac\u5316\u5242', vshortT: '\u7d27\u5f20',
+    vshortP: '\u8109\u51b2', vshortX: '\u5f02\u5ba2', vshortR: '\u6839\u57fa', vshortN: '\u4e2d\u67a2', vshortQ: '\u91cf\u5b50', vshortO: '\u8f68\u9053',
+    rankBasic: '\u57fa\u7840',
+    rankEvolved: '\u8fdb\u5316',
+    rankMastered: '\u7cbe\u901a',
+    rankTranscended: '\u8d85\u8d8a',
+    rankAbbr: ['\u57fa', '\u8fdb', '\u7cbe', '\u8d85'],
+    shapeTriangle: '\u4e09\u89d2\u5f62',
+    shapeSquare: '\u6b63\u65b9\u5f62',
+    shapePentagon: '\u4e94\u89d2\u5f62',
+    shapeHexagon: '\u516d\u89d2\u5f62',
+    shapeCube: '\u7acb\u65b9\u4f53',
+    shapeCuboid: '\u957f\u65b9\u4f53',
+    tierCore: '\u6838\u5fc3',
+    tierAdvanced: '\u9ad8\u7ea7',
+    miscTitle: 'CYCLUS Prime \u2014 \u57fa\u56e0\u7ec4\u51b2\u7a81',
+    objectiveDefault: '\u5b58\u6d3b\u5c42',
+    upgradeNone: '\u5c1a\u65e0\u5347\u7ea7',
+    upgradeStabilize: '\u7a33\u5b9a',
+    upgradeStabilizeText: '\u7cfb\u7edf\u635f\u5931\u51cf\u8f7b 10%\u3002',
+    upgradeResonance: '\u5171\u632f',
+    upgradeResonanceText: '\u9891\u7387\u653e\u7f6e\u83b7\u5f97\u989d\u5916\u5145\u80fd\u3002',
+    upgradeScaffold: '\u652f\u67b6',
+    upgradeScaffoldText: '\u7ed3\u6784\u653e\u7f6e\u83b7\u5f97\u989d\u5916\u5145\u80fd\u3002',
+    upgradeBridgeMemory: '\u6865\u6881\u8bb0\u5fc6',
+    upgradeBridgeMemoryText: '\u6865\u6881\u76ee\u6807\u52a0\u6210\u66f4\u5f3a\u3002',
+    upgradeEntropyControl: '\u71b5\u63a7\u5236',
+    upgradeEntropyControlText: '\u6df7\u6c8c\u60e9\u7f5a\u88ab\u7f13\u548c\u3002',
+    objCoherence70: '\u4ee5\u76f8\u5e72\u6027 \u2265 0.70 \u83b7\u80dc',
+    objCoherence70Hint: '\u4f7f\u7528\u9876\u70b9\u4eb2\u548c\u5ea6\u548c\u53cb\u597d\u90bb\u5c45\u517c\u5bb9\u6027\u3002',
+    objBridge2: '\u653e\u7f6e\u6865\u6881\u4e24\u6b21\u5e76\u907f\u514d\u5d29\u6e83',
+    objBridge2Hint: '\u6865\u6881\u7a33\u5b9a\u5f31\u5339\u914d\u5e76\u4fdd\u62a4\u6df7\u5408\u6a21\u5f0f\u3002',
+    objChaosLow: '\u5c06\u6df7\u6c8c\u98ce\u9669\u4fdd\u6301\u5728 0.20 \u4ee5\u4e0b',
+    objChaosLowHint: '\u4ec5\u5728 Tension\u3001Pulse \u6216 Xeno \u4e0a\u4f7f\u7528\u6df7\u6c8c\u3002',
+    objAdjacentPair: '\u5360\u9886\u4e24\u4e2a\u76f8\u90bb\u9876\u70b9',
+    objAdjacentPairHint: '\u76f8\u90bb\u53cb\u597d\u5355\u5143\u653e\u5927\u5c42\u5f97\u5206\u3002',
+    objMargin2: '\u4ee5\u8fb9\u9645 \u2265 2.00 \u83b7\u80dc',
+    objMargin2Hint: '\u5728\u7cfb\u7edf\u963b\u6b62\u4e4b\u524d\u9009\u62e9\u5f3a\u5927\u7684\u9876\u70b9-\u5143\u7d20\u5339\u914d\u3002',
+    previewAffinity: '\u4eb2\u548c\u5ea6',
+    previewProjected: '\u9884\u6d4b',
+  },
+};
+
+const STORAGE_KEY = 'cyclus_lang';
+let currentLang = 'en';
+
+function getLang() {
+  return currentLang;
+}
+
+function setLang(lang) {
+  if (LANGUAGES[lang]) {
+    currentLang = lang;
+    try { localStorage.setItem(STORAGE_KEY, lang); } catch (_) {}
+  }
+}
+
+function loadLang() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved && LANGUAGES[saved]) { currentLang = saved; }
+  } catch (_) {}
+}
+
+function t(key, ...args) {
+  let str = LANGUAGES[currentLang]?.[key] ?? LANGUAGES['en']?.[key] ?? key;
+  if (args.length) args.forEach((arg, i) => { str = str.replace(`{${i}}`, String(arg)); });
+  return str;
+}
+
+function tutorialStep(index) {
+  const steps = LANGUAGES[currentLang]?.tutorialSteps ?? LANGUAGES['en']?.tutorialSteps ?? [];
+  return steps[Math.min(index, steps.length - 1)] ?? '';
+}
+//=== pyramid.mjs ===
+if (typeof CanvasRenderingContext2D !== 'undefined' && !CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    this.moveTo(x + r, y);
+    this.lineTo(x + w - r, y);
+    this.quadraticCurveTo(x + w, y, x + w, y + r);
+    this.lineTo(x + w, y + h - r);
+    this.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    this.lineTo(x + r, y + h);
+    this.quadraticCurveTo(x, y + h, x, y + h - r);
+    this.lineTo(x, y + r);
+    this.quadraticCurveTo(x, y, x + r, y);
+    this.closePath();
+  };
+}
+
+const LAYER_HEIGHT = 25;
+const SCALE_DECAY = 0.11;
+
+const SHAPE_DEFS = [
+  {
+    vertexCount: 3, label: 'Triangle', tier: 'core', nameKey: 'shapeTriangle', tierKey: 'tierCore',
+    style: { vertexShape: 'circle', edgeStyle: 'solid', bgTint: [0, 212, 170, 0.03], badgeColor: '#00d4aa' },
+    vertices: [
+      { key: 'H', label: 'Harmony', labelKey: 'vshortH',  playerColor: [0, 212, 170], systemColor: [0, 150, 200] },
+      { key: 'Z', label: 'Zenith', labelKey: 'vshortZ',   playerColor: [255, 215, 0], systemColor: [180, 180, 220] },
+      { key: 'C', label: 'Catalyst', labelKey: 'vshortC', playerColor: [108, 99, 255], systemColor: [130, 80, 200] },
+    ]
+  },
+  {
+    vertexCount: 4, label: 'Square', tier: 'core', nameKey: 'shapeSquare', tierKey: 'tierCore',
+    style: { vertexShape: 'square', edgeStyle: 'dashed', bgTint: [255, 150, 50, 0.04], badgeColor: '#ff9933' },
+    vertices: [
+      { key: 'H', label: 'Harmony', labelKey: 'vshortH',  playerColor: [0, 212, 170], systemColor: [0, 150, 200] },
+      { key: 'Z', label: 'Zenith', labelKey: 'vshortZ',   playerColor: [255, 215, 0], systemColor: [180, 180, 220] },
+      { key: 'C', label: 'Catalyst', labelKey: 'vshortC', playerColor: [108, 99, 255], systemColor: [130, 80, 200] },
+      { key: 'T', label: 'Tension', labelKey: 'vshortT',  playerColor: [255, 100, 100], systemColor: [200, 100, 100] },
+    ]
+  },
+  {
+    vertexCount: 5, label: 'Pentagon', tier: 'core', nameKey: 'shapePentagon', tierKey: 'tierCore',
+    style: { vertexShape: 'pentagon', edgeStyle: 'dot-dash', bgTint: [180, 80, 255, 0.04], badgeColor: '#b366ff' },
+    vertices: [
+      { key: 'H', label: 'Harmony', labelKey: 'vshortH',  playerColor: [0, 212, 170], systemColor: [0, 150, 200] },
+      { key: 'Z', label: 'Zenith', labelKey: 'vshortZ',   playerColor: [255, 215, 0], systemColor: [180, 180, 220] },
+      { key: 'C', label: 'Catalyst', labelKey: 'vshortC', playerColor: [108, 99, 255], systemColor: [130, 80, 200] },
+      { key: 'T', label: 'Tension', labelKey: 'vshortT',  playerColor: [255, 100, 100], systemColor: [200, 100, 100] },
+      { key: 'P', label: 'Pulse', labelKey: 'vshortP',    playerColor: [200, 80, 255], systemColor: [140, 60, 200] },
+    ]
+  },
+  {
+    vertexCount: 6, label: 'Hexagon', tier: 'core', nameKey: 'shapeHexagon', tierKey: 'tierCore',
+    style: { vertexShape: 'hexagon', edgeStyle: 'double', bgTint: [0, 200, 255, 0.04], badgeColor: '#00ccff' },
+    vertices: [
+      { key: 'H', label: 'Harmony', labelKey: 'vshortH',  playerColor: [0, 212, 170], systemColor: [0, 150, 200] },
+      { key: 'Z', label: 'Zenith', labelKey: 'vshortZ',   playerColor: [255, 215, 0], systemColor: [180, 180, 220] },
+      { key: 'C', label: 'Catalyst', labelKey: 'vshortC', playerColor: [108, 99, 255], systemColor: [130, 80, 200] },
+      { key: 'T', label: 'Tension', labelKey: 'vshortT',  playerColor: [255, 100, 100], systemColor: [200, 100, 100] },
+      { key: 'P', label: 'Pulse', labelKey: 'vshortP',    playerColor: [200, 80, 255], systemColor: [140, 60, 200] },
+      { key: 'X', label: 'Xeno', labelKey: 'vshortX',     playerColor: [0, 230, 255], systemColor: [0, 160, 200] },
+    ]
+  },
+  {
+    vertexCount: 8, label: 'Cube', tier: 'advanced', nameKey: 'shapeCube', tierKey: 'tierAdvanced',
+    style: { vertexShape: 'cube', edgeStyle: 'cubic', bgTint: [120, 255, 220, 0.045], badgeColor: '#77ffdd' },
+    vertices: [
+      { key: 'H', label: 'Harmony', labelKey: 'vshortH',  playerColor: [0, 212, 170], systemColor: [0, 150, 200] },
+      { key: 'Z', label: 'Zenith', labelKey: 'vshortZ',   playerColor: [255, 215, 0], systemColor: [180, 180, 220] },
+      { key: 'C', label: 'Catalyst', labelKey: 'vshortC', playerColor: [108, 99, 255], systemColor: [130, 80, 200] },
+      { key: 'T', label: 'Tension', labelKey: 'vshortT',  playerColor: [255, 100, 100], systemColor: [200, 100, 100] },
+      { key: 'P', label: 'Pulse', labelKey: 'vshortP',    playerColor: [200, 80, 255], systemColor: [140, 60, 200] },
+      { key: 'X', label: 'Xeno', labelKey: 'vshortX',     playerColor: [0, 230, 255], systemColor: [0, 160, 200] },
+      { key: 'R', label: 'Root', labelKey: 'vshortR',     playerColor: [120, 255, 220], systemColor: [60, 180, 160] },
+      { key: 'N', label: 'Nexus', labelKey: 'vshortN',    playerColor: [255, 180, 80], systemColor: [190, 120, 60] },
+    ]
+  },
+  {
+    vertexCount: 10, label: 'Cuboid', tier: 'advanced', nameKey: 'shapeCuboid', tierKey: 'tierAdvanced',
+    style: { vertexShape: 'cuboid', edgeStyle: 'cubic-phase', bgTint: [255, 90, 210, 0.04], badgeColor: '#ff66dd' },
+    vertices: [
+      { key: 'H', label: 'Harmony', labelKey: 'vshortH',  playerColor: [0, 212, 170], systemColor: [0, 150, 200] },
+      { key: 'Z', label: 'Zenith', labelKey: 'vshortZ',   playerColor: [255, 215, 0], systemColor: [180, 180, 220] },
+      { key: 'C', label: 'Catalyst', labelKey: 'vshortC', playerColor: [108, 99, 255], systemColor: [130, 80, 200] },
+      { key: 'T', label: 'Tension', labelKey: 'vshortT',  playerColor: [255, 100, 100], systemColor: [200, 100, 100] },
+      { key: 'P', label: 'Pulse', labelKey: 'vshortP',    playerColor: [200, 80, 255], systemColor: [140, 60, 200] },
+      { key: 'X', label: 'Xeno', labelKey: 'vshortX',     playerColor: [0, 230, 255], systemColor: [0, 160, 200] },
+      { key: 'R', label: 'Root', labelKey: 'vshortR',     playerColor: [120, 255, 220], systemColor: [60, 180, 160] },
+      { key: 'N', label: 'Nexus', labelKey: 'vshortN',    playerColor: [255, 180, 80], systemColor: [190, 120, 60] },
+      { key: 'Q', label: 'Quanta', labelKey: 'vshortQ',   playerColor: [255, 90, 210], systemColor: [200, 70, 160] },
+      { key: 'O', label: 'Orbit', labelKey: 'vshortO',    playerColor: [180, 220, 255], systemColor: [120, 150, 220] },
+    ]
+  }
+];
+
+function getShapeDef(vertexCount) {
+  return SHAPE_DEFS.find(s => s.vertexCount === vertexCount) || SHAPE_DEFS[0];
+}
+
+class Layer {
+  constructor(level, baseY, scale, shapeDef) {
+    this.level = level;
+    this.baseY = baseY;
+    this.scale = scale;
+    this.R = 120 * scale;
+    this.apexY = baseY + LAYER_HEIGHT;
+    this.shapeDef = shapeDef;
+    this.style = shapeDef.style;
+    this.vertexKeys = shapeDef.vertices.map(v => v.key);
+    this.vertexCount = shapeDef.vertexCount;
+
+    this.vertices = {};
+    for (const vd of shapeDef.vertices) {
+      this.vertices[vd.key] = { charge: 0, owner: 'none', element: null, def: vd };
+    }
+
+    this.edges = [];
+    this.edgeGlows = {};
+    for (let i = 0; i < this.vertexCount; i++) {
+      const a = this.vertexKeys[i];
+      const b = this.vertexKeys[(i + 1) % this.vertexCount];
+      this.edges.push([a, b]);
+      this.edgeGlows[this._edgeKey(a, b)] = 0;
+    }
+
+    this.particles = [];
+    this.apexGlow = 0;
+    this.flashIntensity = 0;
+    this.flashColor = [255, 255, 255];
+  }
+
+  _edgeKey(a, b) {
+    return a < b ? a + b : b + a;
+  }
+
+  get numFilled() {
+    return Object.values(this.vertices).filter(v => v.owner !== 'none').length;
+  }
+
+  get completion() {
+    return this.numFilled / this.vertexCount;
+  }
+
+  get stateName() {
+    const n = this.numFilled;
+    if (n === 0) return 'Empty';
+    if (n === 1) return 'One Cell';
+    if (n >= this.vertexCount - 1) return 'Almost Complete';
+    return `${n} Cells`;
+  }
+
+  get stateColor() {
+    const n = this.numFilled;
+    if (n === 0) return '#444466';
+    if (n === 1) return '#00d4aa';
+    if (n >= this.vertexCount - 1) return '#00ffaa';
+    return '#ffd700';
+  }
+
+  place(vertexKey, element, owner, chargeAmount = 0.8) {
+    const v = this.vertices[vertexKey];
+    if (!v || v.owner !== 'none') return false;
+    v.owner = owner;
+    v.element = element;
+    v.charge = chargeAmount;
+    this.spawnParticles(vertexKey, 8);
+    this.flashIntensity = 0.5;
+    const colors = owner === 'player' ? v.def.playerColor : v.def.systemColor;
+    this.flashColor = colors;
+    return true;
+  }
+
+  hasCompleted() {
+    return this.numFilled >= this.vertexCount;
+  }
+
+  getEmptyVertices() {
+    return Object.entries(this.vertices)
+      .filter(([, v]) => v.owner === 'none')
+      .map(([k]) => k);
+  }
+
+  update(dt, floatPhase) {
+    this.apexGlow = 0.5 + 0.5 * Math.sin(floatPhase * 0.7 + this.level * 1.2);
+    for (const [a, b] of this.edges) {
+      const ek = this._edgeKey(a, b);
+      this.edgeGlows[ek] = (this.vertices[a].charge + this.vertices[b].charge) / 2;
+    }
+    this.updateParticles(dt);
+    if (this.flashIntensity > 0) {
+      this.flashIntensity -= dt * 2;
+      if (this.flashIntensity < 0) this.flashIntensity = 0;
+    }
+  }
+
+  spawnParticles(key, count) {
+    if (this.particles.length > 300) return;
+    const color = this.vertices[key].def.playerColor;
+    for (let i = 0; i < count; i++) {
+      this.particles.push({
+        x: (Math.random() - 0.5) * 40,
+        y: Math.random() * 60 + 20,
+        z: (Math.random() - 0.5) * 40,
+        vx: (Math.random() - 0.5) * 2,
+        vy: Math.random() * 1.5 + 0.5,
+        vz: (Math.random() - 0.5) * 2,
+        life: 1,
+        decay: 0.3 + Math.random() * 0.5,
+        r: color[0], g: color[1], b: color[2],
+        size: 1.5 + Math.random() * 2.5,
+      });
+    }
+  }
+
+  updateParticles(dt) {
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      const p = this.particles[i];
+      p.x += p.vx * dt * 40;
+      p.y += p.vy * dt * 40;
+      p.z += p.vz * dt * 40;
+      p.life -= p.decay * dt;
+      p.vy -= dt * 0.5;
+      if (p.life <= 0 || p.y < -50) {
+        this.particles.splice(i, 1);
+      }
+    }
+  }
+
+  getVertexWorld(key) {
+    const idx = this.vertexKeys.indexOf(key);
+    if (idx === -1) return null;
+    const R = this.R;
+    const angle = (idx / this.vertexCount) * Math.PI * 2 - Math.PI / 2;
+    return [R * Math.cos(angle), this.baseY, R * Math.sin(angle)];
+  }
+
+  getApexWorld(floatPhase) {
+    const floatY = this.apexY + Math.sin(floatPhase * 0.7 + this.level * 1.2) * 6;
+    return [0, floatY, 0];
+  }
+
+  getVertexScreen(key, camera, rotY) {
+    const w = this.getVertexWorld(key);
+    if (!w) return null;
+    const cosT = Math.cos(rotY);
+    const sinT = Math.sin(rotY);
+    const x = w[0] * cosT - w[2] * sinT;
+    const z = w[0] * sinT + w[2] * cosT;
+    return camera.project(x, w[1], z);
+  }
+
+  getApexScreen(camera, rotY, floatPhase) {
+    const w = this.getApexWorld(floatPhase);
+    const cosT = Math.cos(rotY);
+    const sinT = Math.sin(rotY);
+    const x = w[0] * cosT - w[2] * sinT;
+    const z = w[0] * sinT + w[2] * cosT;
+    return camera.project(x, w[1], z);
+  }
+
+  render(ctx, camera, width, height, rotY, floatPhase) {
+    const vScreens = {};
+    let hasAny = false;
+    for (const k of this.vertexKeys) {
+      const s = this.getVertexScreen(k, camera, rotY);
+      vScreens[k] = s;
+      if (this.vertices[k].charge > 0.05) hasAny = true;
+    }
+    const apex = this.getApexScreen(camera, rotY, floatPhase);
+
+    if (!hasAny && this.numFilled === 0) {
+      this.renderSeed(ctx, camera, width, height, floatPhase);
+      return;
+    }
+
+    for (const [a, b] of this.edges) {
+      const sa = vScreens[a];
+      const sb = vScreens[b];
+      if (!sa || !sb) continue;
+      const ek = this._edgeKey(a, b);
+      const glow = this.edgeGlows[ek];
+      if (glow < 0.05) continue;
+
+      const grad = ctx.createLinearGradient(sa.sx, sa.sy, sb.sx, sb.sy);
+      const c = this._getEdgeColor(a, b, glow);
+      grad.addColorStop(0, c(0));
+      grad.addColorStop(0.5, c(1));
+      grad.addColorStop(1, c(0));
+      ctx.strokeStyle = grad;
+      ctx.shadowColor = `rgba(${this._getEdgeRGB(a, b, glow)})`;
+      ctx.shadowBlur = 6 + glow * 12;
+
+      if (this.style.edgeStyle === 'dashed') {
+        ctx.setLineDash([6, 4]);
+        ctx.lineWidth = 1.5 + glow * 2.5;
+      } else if (this.style.edgeStyle === 'dot-dash') {
+        ctx.setLineDash([2, 4, 6, 4]);
+        ctx.lineWidth = 1.5 + glow * 2.5;
+      } else if (this.style.edgeStyle === 'cubic' || this.style.edgeStyle === 'cubic-phase') {
+        ctx.setLineDash(this.style.edgeStyle === 'cubic' ? [10, 3, 2, 3] : [3, 3, 10, 3]);
+        ctx.lineWidth = 1.2 + glow * 2.8;
+      } else if (this.style.edgeStyle === 'double') {
+        const dx = sb.sx - sa.sx;
+        const dy = sb.sy - sa.sy;
+        const elen = Math.sqrt(dx * dx + dy * dy);
+        if (elen < 1) continue;
+        const nx = -dy / elen * 3;
+        const ny = dx / elen * 3;
+        ctx.lineWidth = 1 + glow * 2;
+        ctx.beginPath();
+        ctx.moveTo(sa.sx + nx, sa.sy + ny);
+        ctx.lineTo(sb.sx + nx, sb.sy + ny);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(sa.sx - nx, sa.sy - ny);
+        ctx.lineTo(sb.sx - nx, sb.sy - ny);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        continue;
+      } else {
+        ctx.lineWidth = 1 + glow * 2;
+      }
+      ctx.beginPath();
+      ctx.moveTo(sa.sx, sa.sy);
+      ctx.lineTo(sb.sx, sb.sy);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      if (['dashed', 'dot-dash', 'cubic', 'cubic-phase'].includes(this.style.edgeStyle)) {
+        ctx.setLineDash([]);
+      }
+    }
+
+    for (const [a, b] of this.edges) {
+      const sa = vScreens[a];
+      const sb = vScreens[b];
+      if (!sa || !sb) continue;
+      const ek = this._edgeKey(a, b);
+      const g = this.edgeGlows[ek];
+      ctx.strokeStyle = `rgba(255,255,255,${g * 0.04})`;
+      ctx.lineWidth = g * 4;
+      ctx.beginPath();
+      ctx.moveTo(sa.sx, sa.sy);
+      ctx.lineTo(sb.sx, sb.sy);
+      ctx.stroke();
+    }
+
+    if (this.flashIntensity > 0.01) {
+      const fc = this.flashColor;
+      ctx.fillStyle = `rgba(${fc[0]},${fc[1]},${fc[2]},${this.flashIntensity * 0.12})`;
+      ctx.fillRect(-width, -height, width * 2, height * 2);
+    }
+
+    for (const [a, b] of this.edges) {
+      const sa = vScreens[a];
+      const sb = vScreens[b];
+      if (!sa || !sb || !apex) continue;
+      const charge = (this.vertices[a].charge + this.vertices[b].charge) / 2;
+      if (charge < 0.1) continue;
+      ctx.fillStyle = `rgba(255,255,255,${charge * 0.02})`;
+      ctx.beginPath();
+      ctx.moveTo(sa.sx, sa.sy);
+      ctx.lineTo(sb.sx, sb.sy);
+      ctx.lineTo(apex.sx, apex.sy);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    if (apex) {
+      const ag = this.apexGlow * this.completion;
+      const apexGrad = ctx.createRadialGradient(apex.sx, apex.sy, 0, apex.sx, apex.sy, 12 + ag * 18);
+      apexGrad.addColorStop(0, `rgba(255,255,255,${0.3 + ag * 0.5})`);
+      apexGrad.addColorStop(0.5, `rgba(200,200,255,${ag * 0.15})`);
+      apexGrad.addColorStop(1, 'rgba(200,200,255,0)');
+      ctx.fillStyle = apexGrad;
+      ctx.beginPath();
+      ctx.arc(apex.sx, apex.sy, 12 + ag * 18, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    for (const k of this.vertexKeys) {
+      const v = this.vertices[k];
+      const s = vScreens[k];
+      if (!s || v.charge < 0.05) continue;
+
+      const colors = v.owner === 'system' ? v.def.systemColor : v.def.playerColor;
+      const cr = colors[0], cg = colors[1], cb = colors[2];
+      const glowSize = 5 + v.charge * 15;
+      const shape = this.style.vertexShape;
+
+      const g = ctx.createRadialGradient(s.sx, s.sy, 0, s.sx, s.sy, glowSize);
+      g.addColorStop(0, `rgba(${cr},${cg},${cb},${0.6 + v.charge * 0.4})`);
+      g.addColorStop(0.3, `rgba(${cr},${cg},${cb},${v.charge * 0.3})`);
+      g.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+      ctx.fillStyle = g;
+
+      if (v.charge > 0.3) {
+        ctx.shadowColor = `rgb(${cr},${cg},${cb})`;
+        ctx.shadowBlur = 10 + v.charge * 18;
+      }
+      this._drawVertexShape(ctx, s.sx, s.sy, glowSize, shape);
+      ctx.shadowBlur = 0;
+
+      if (v.owner !== 'none') {
+        const ownerColor = v.owner === 'player' ? [255, 220, 100] : [100, 180, 255];
+        ctx.strokeStyle = `rgba(${ownerColor[0]},${ownerColor[1]},${ownerColor[2]},${0.5 + v.charge * 0.3})`;
+        ctx.lineWidth = 2;
+        this._drawVertexShape(ctx, s.sx, s.sy, glowSize + 4, shape);
+        ctx.stroke();
+      }
+
+      const phase = k === this.vertexKeys[0] ? 0 : k === this.vertexKeys[1] ? 2.1 : k === this.vertexKeys[2] ? 4.2 : (this.vertexKeys.indexOf(k) * 2.1);
+      const osc = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(floatPhase * 0.7 + phase + this.level * 0.5));
+      const innerSize = 2 + v.charge * 4 * osc;
+      ctx.fillStyle = `rgba(${Math.min(255, cr + 60)},${Math.min(255, cg + 60)},${Math.min(255, cb + 60)},${0.5 + v.charge * 0.5})`;
+      this._drawVertexShape(ctx, s.sx, s.sy, innerSize, shape);
+      ctx.fill();
+
+      if (v.owner === 'player') {
+        ctx.fillStyle = `rgba(255,220,100,${0.3 + v.charge * 0.3})`;
+        ctx.font = '8px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('P', s.sx, s.sy + 3);
+      } else if (v.owner === 'system') {
+        ctx.fillStyle = `rgba(100,180,255,${0.3 + v.charge * 0.3})`;
+        ctx.font = '8px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('S', s.sx, s.sy + 3);
+      }
+    }
+
+    for (const p of this.particles) {
+      const cosT = Math.cos(rotY);
+      const sinT = Math.sin(rotY);
+      const wx = p.x * cosT - p.z * sinT;
+      const wz = p.x * sinT + p.z * cosT;
+      const ps = camera.project(wx, p.y + this.baseY, wz);
+      if (!ps) continue;
+      ctx.fillStyle = `rgba(${p.r},${p.g},${p.b},${p.life * 0.6})`;
+      this._drawVertexShape(ctx, ps.sx, ps.sy, p.size * p.life, 'circle');
+      ctx.fill();
+    }
+  }
+
+  _drawVertexShape(ctx, cx, cy, size, shape) {
+    ctx.beginPath();
+    if (shape === 'square') {
+      const s = size * 0.85;
+      ctx.roundRect(cx - s, cy - s, s * 2, s * 2, 3);
+    } else if (shape === 'pentagon') {
+      const s = size * 0.9;
+      for (let i = 0; i < 5; i++) {
+        const a = -Math.PI / 2 + (i / 5) * Math.PI * 2;
+        const px = cx + s * Math.cos(a);
+        const py = cy + s * Math.sin(a);
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+    } else if (shape === 'hexagon') {
+      const s = size * 0.9;
+      for (let i = 0; i < 6; i++) {
+        const a = -Math.PI / 2 + (i / 6) * Math.PI * 2;
+        const px = cx + s * Math.cos(a);
+        const py = cy + s * Math.sin(a);
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+    } else if (shape === 'cube') {
+      const s = size * 0.82;
+      ctx.roundRect(cx - s, cy - s, s * 2, s * 2, 3);
+      ctx.moveTo(cx - s * 0.45, cy - s * 1.25);
+      ctx.lineTo(cx + s * 1.25, cy - s * 1.25);
+      ctx.lineTo(cx + s * 1.25, cy + s * 0.45);
+      ctx.lineTo(cx + s, cy + s);
+      ctx.moveTo(cx + s, cy - s);
+      ctx.lineTo(cx + s * 1.25, cy - s * 1.25);
+      ctx.moveTo(cx - s, cy - s);
+      ctx.lineTo(cx - s * 0.45, cy - s * 1.25);
+    } else if (shape === 'cuboid') {
+      const sx = size * 1.05;
+      const sy = size * 0.66;
+      ctx.roundRect(cx - sx, cy - sy, sx * 2, sy * 2, 3);
+      ctx.moveTo(cx - sx * 0.55, cy - sy * 1.55);
+      ctx.lineTo(cx + sx * 1.15, cy - sy * 1.55);
+      ctx.lineTo(cx + sx * 1.15, cy + sy * 0.45);
+      ctx.lineTo(cx + sx, cy + sy);
+      ctx.moveTo(cx + sx, cy - sy);
+      ctx.lineTo(cx + sx * 1.15, cy - sy * 1.55);
+      ctx.moveTo(cx - sx, cy - sy);
+      ctx.lineTo(cx - sx * 0.55, cy - sy * 1.55);
+    } else if (shape === 'diamond') {
+      const s = size * 0.9;
+      ctx.moveTo(cx, cy - s);
+      ctx.lineTo(cx + s, cy);
+      ctx.lineTo(cx, cy + s);
+      ctx.lineTo(cx - s, cy);
+      ctx.closePath();
+    } else {
+      ctx.arc(cx, cy, size, 0, Math.PI * 2);
+    }
+  }
+
+  renderSeed(ctx, camera, width, height, floatPhase) {
+    const center = camera.project(0, this.baseY + 10, 0);
+    if (!center) return;
+    const pulse = 0.5 + 0.5 * Math.sin(floatPhase * 0.7 + this.level * 1.2);
+    const g = ctx.createRadialGradient(center.sx, center.sy, 0, center.sx, center.sy, 10 + pulse * 6);
+    g.addColorStop(0, `rgba(255,255,255,${0.2 + pulse * 0.3})`);
+    g.addColorStop(0.5, `rgba(0,212,170,${0.1 + pulse * 0.15})`);
+    g.addColorStop(1, `rgba(0,212,170,0)`);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(center.sx, center.sy, 10 + pulse * 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = `rgba(0,212,170,${0.3 + pulse * 0.4})`;
+    ctx.beginPath();
+    ctx.arc(center.sx, center.sy, 1 + pulse * 1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  _getEdgeColor(k1, k2, glow) {
+    const getColor = (k) => {
+      const v = this.vertices[k];
+      if (v.owner === 'system') return v.def.systemColor;
+      return v.def.playerColor;
+    };
+    const c1 = getColor(k1);
+    const c2 = getColor(k2);
+    return (t) => {
+      if (t === 1) {
+        const r = Math.round(c1[0] * 0.5 + c2[0] * 0.5);
+        const g = Math.round(c1[1] * 0.5 + c2[1] * 0.5);
+        const b = Math.round(c1[2] * 0.5 + c2[2] * 0.5);
+        return `rgba(${r},${g},${b},${0.7 + glow * 0.3})`;
+      }
+      const cr = t < 0.5 ? c1[0] : c2[0];
+      const cg = t < 0.5 ? c1[1] : c2[1];
+      const cb = t < 0.5 ? c1[2] : c2[2];
+      return `rgba(${cr},${cg},${cb},${0.3 + glow * 0.5})`;
+    };
+  }
+
+  _getEdgeRGB(k1, k2, glow) {
+    const getColor = (k) => {
+      const v = this.vertices[k];
+      if (v.owner === 'system') return v.def.systemColor;
+      return v.def.playerColor;
+    };
+    const c1 = getColor(k1);
+    const c2 = getColor(k2);
+    const r = Math.round(c1[0] * 0.5 + c2[0] * 0.5);
+    const g = Math.round(c1[1] * 0.5 + c2[1] * 0.5);
+    const b = Math.round(c1[2] * 0.5 + c2[2] * 0.5);
+    return `${r},${g},${b}`;
+  }
+}
+
+class Pyramid {
+  constructor() {
+    this.layers = [];
+    this.rotY = 0;
+    this.floatPhase = 0;
+    this.addLayer(SHAPE_DEFS[0]);
+  }
+
+  get currentLayer() {
+    return this.layers[this.layers.length - 1];
+  }
+
+  addLayer(shapeDef) {
+    const level = this.layers.length;
+    const baseY = level * LAYER_HEIGHT;
+    const scale = Math.max(0.3, 1 - level * SCALE_DECAY);
+    const layer = new Layer(level, baseY, scale, shapeDef);
+    this.layers.push(layer);
+  }
+
+  removeLastLayer() {
+    if (this.layers.length > 1) {
+      this.layers.pop();
+    }
+  }
+
+  update(dt) {
+    this.rotY += dt * 0.15;
+    this.floatPhase += dt * 0.8;
+    for (const layer of this.layers) {
+      layer.update(dt, this.floatPhase);
+    }
+  }
+
+  render(ctx, camera, width, height) {
+    if (this.layers.length === 0) return;
+    ctx.save();
+
+    const tint = this.currentLayer.style.bgTint;
+    if (tint) {
+      const maxR = Math.sqrt(width * width + height * height) / 2;
+      const tg = ctx.createRadialGradient(0, 0, 0, 0, 0, maxR);
+      tg.addColorStop(0, `rgba(${tint[0]},${tint[1]},${tint[2]},${tint[3] * 0.6})`);
+      tg.addColorStop(0.4, `rgba(${tint[0]},${tint[1]},${tint[2]},${tint[3] * 0.3})`);
+      tg.addColorStop(1, `rgba(${tint[0]},${tint[1]},${tint[2]},0)`);
+      ctx.fillStyle = tg;
+      ctx.fillRect(-width / 2, -height / 2, width, height);
+    }
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+    ctx.lineWidth = 0.5;
+    for (let i = 200; i < 600; i += 30) {
+      ctx.beginPath();
+      ctx.arc(0, 20, i, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    for (const layer of this.layers) {
+      layer.render(ctx, camera, width, height, this.rotY, this.floatPhase);
+    }
+    ctx.restore();
+  }
+
+  getVertexScreen(key, camera) {
+    return this.currentLayer ? this.currentLayer.getVertexScreen(key, camera, this.rotY) : null;
+  }
+}
+//=== camera.mjs ===
+class Camera {
+  constructor() {
+    this.theta = 0.8;
+    this.phi = 0.6;
+    this.radius = 500;
+    this.targetRadius = 500;
+    this.targetTheta = 0.8;
+    this.targetPhi = 0.6;
+    this.fov = 600;
+    this.lookAt = [0, 0, 0];
+    this.smoothing = 0.06;
+
+    this.isDragging = false;
+    this.lastMX = 0;
+    this.lastMY = 0;
+    this.dragTheta = 0;
+    this.dragPhi = 0;
+  }
+
+  getPos() {
+    const r = this.radius;
+    const t = this.theta;
+    const p = this.phi;
+    return [
+      r * Math.sin(t) * Math.cos(p) + this.lookAt[0],
+      r * Math.sin(p) + this.lookAt[1],
+      r * Math.cos(t) * Math.cos(p) + this.lookAt[2]
+    ];
+  }
+
+  project(wx, wy, wz) {
+    const cx = this.lookAt[0];
+    const cy = this.lookAt[1];
+    const cz = this.lookAt[2];
+
+    let x = wx - cx;
+    let y = wy - cy;
+    let z = wz - cz;
+
+    const cosT = Math.cos(-this.theta);
+    const sinT = Math.sin(-this.theta);
+    const x1 = x * cosT - z * sinT;
+    const z1 = x * sinT + z * cosT;
+    x = x1;
+    z = z1;
+
+    const cosP = Math.cos(-this.phi);
+    const sinP = Math.sin(-this.phi);
+    const y1 = y * cosP - z * sinP;
+    const z2 = y * sinP + z * cosP;
+    y = y1;
+    z = z2;
+
+    const d = z + this.radius * Math.cos(this.phi) + 10;
+    if (d <= 0) return null;
+
+    const scale = this.fov / d;
+    return { sx: x * scale, sy: -y * scale, depth: z, scale };
+  }
+
+  projectAll(points) {
+    return points.map(p => {
+      const proj = this.project(p[0], p[1], p[2]);
+      return proj ? { ...proj, wx: p[0], wy: p[1], wz: p[2] } : null;
+    }).filter(Boolean);
+  }
+
+  update(dt) {
+    this.theta += (this.targetTheta + this.dragTheta - this.theta) * this.smoothing;
+    this.phi += (this.targetPhi + this.dragPhi - this.phi) * this.smoothing;
+    this.phi = Math.min(1.4, Math.max(0.1, this.phi));
+    this.radius += (this.targetRadius - this.radius) * this.smoothing;
+
+    this.dragTheta *= 0.92;
+    this.dragPhi *= 0.92;
+  }
+
+  zoom(amount) {
+    this.targetRadius = Math.max(200, Math.min(1200, this.targetRadius - amount));
+  }
+
+  autoRotate(dt) {
+    this.targetTheta += dt * 0.05;
+  }
+
+  startDrag(mx, my) {
+    this.isDragging = true;
+    this.lastMX = mx;
+    this.lastMY = my;
+  }
+
+  moveDrag(mx, my) {
+    if (!this.isDragging) return;
+    const dx = mx - this.lastMX;
+    const dy = my - this.lastMY;
+    this.dragTheta += dx * 0.005;
+    this.dragPhi += dy * 0.005;
+    this.lastMX = mx;
+    this.lastMY = my;
+  }
+
+  endDrag() {
+    this.isDragging = false;
+  }
+
+  getRenderOrder(items) {
+    return items.sort((a, b) => b.depth - a.depth);
+  }
+
+  screenToWorld(sx, sy, canvasW, canvasH) {
+    const cx = this.lookAt[0];
+    const cy = this.lookAt[1];
+    const cz = this.lookAt[2];
+
+    const d = this.radius * Math.cos(this.phi) + 10;
+    const scale = this.fov / d;
+
+    const xUnscaled = (sx - canvasW / 2) / scale;
+    const yUnscaled = -(sy - canvasH / 2) / scale;
+
+    const cosT = Math.cos(this.theta);
+    const sinT = Math.sin(this.theta);
+    const cosP = Math.cos(this.phi);
+    const sinP = Math.sin(this.phi);
+
+    const wx = xUnscaled * cosT + (yUnscaled * sinP * sinT);
+    const wy = yUnscaled * cosP;
+    const wz = -xUnscaled * sinT + (yUnscaled * sinP * cosT);
+
+    return { wx: wx + cx, wy: wy + cy, wz: wz + cz };
+  }
+}
+//=== audio.mjs ===
+class AudioSystem {
+  constructor() {
+    this.ctx = null;
+    this.muted = false;
+    this.initialized = false;
+  }
+
+  init() {
+    if (this.initialized) return;
+    try {
+      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      this.initialized = true;
+    } catch (e) {
+    }
+  }
+
+  resume() {
+    if (this.initialized) {
+      if (this.ctx && this.ctx.state === 'suspended') {
+        this.ctx.resume();
+      }
+      return;
+    }
+    try {
+      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      this.initialized = true;
+      if (this.ctx.state === 'suspended') {
+        this.ctx.resume();
+      }
+    } catch (e) {
+    }
+  }
+
+  playTone(freq, duration, type = 'sine', volume = 0.1) {
+    if (this.muted || !this.ctx) return;
+    if (this.ctx.state === 'suspended') return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+    gain.gain.setValueAtTime(volume, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+    osc.start();
+    osc.stop(this.ctx.currentTime + duration);
+  }
+
+  playSelect() {
+    this.playTone(880, 0.1, 'sine', 0.04);
+  }
+
+  playPlace(key) {
+    const freqs = { H: 440, F: 587, S: 523, C: 370, B: 660 };
+    this.playTone(freqs[key] || 440, 0.3, 'sine', 0.08);
+    this.playTone((freqs[key] || 440) * 1.5, 0.15, 'sine', 0.04);
+  }
+
+  playFlourish() {
+    const notes = [523, 659, 784, 1047];
+    for (let i = 0; i < notes.length; i++) {
+      setTimeout(() => this.playTone(notes[i], 0.6, 'sine', 0.1), i * 100);
+    }
+  }
+
+  playFragment() {
+    this.playTone(150, 0.8, 'sawtooth', 0.06);
+    setTimeout(() => this.playTone(120, 0.6, 'sawtooth', 0.04), 200);
+    setTimeout(() => this.playTone(80, 1.0, 'sawtooth', 0.03), 400);
+  }
+
+  playCombo(count) {
+    const base = 440 + count * 60;
+    this.playTone(base, 0.15, 'sine', 0.06);
+    setTimeout(() => this.playTone(base * 1.25, 0.1, 'sine', 0.04), 60);
+    setTimeout(() => this.playTone(base * 1.5, 0.2, 'sine', 0.08), 120);
+  }
+
+  playPortal() {
+    const notes = [220, 330, 440, 550, 660];
+    for (let i = 0; i < notes.length; i++) {
+      setTimeout(() => this.playTone(notes[i], 0.4, 'sine', 0.06), i * 80);
+    }
+  }
+
+  playWarning() {
+    this.playTone(600, 0.1, 'square', 0.03);
+    setTimeout(() => this.playTone(600, 0.1, 'square', 0.03), 200);
+  }
+
+  toggleMute() {
+    this.muted = !this.muted;
+    return this.muted;
+  }
+}
+//=== renderer.mjs ===
+class Renderer {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.starfield = [];
+    this.frameTime = 0;
+    this.placementRipples = [];
+    this.screenFlash = 0;
+    this.screenFlashColor = [0, 0, 0];
+
+    this.resize();
+    this.initStarfield();
+  }
+
+  addPlacementRipple(key, color) {
+    this.placementRipples.push({
+      x: 0, y: 0, z: 0,
+      radius: 10,
+      maxRadius: 80 + Math.random() * 40,
+      life: 1,
+      r: color[0], g: color[1], b: color[2],
+    });
+  }
+
+  flashScreen(color, intensity) {
+    this.screenFlash = intensity;
+    this.screenFlashColor = color;
+  }
+
+  resize() {
+    this.canvas.width = window.innerWidth;
+    this.canvas.height = window.innerHeight;
+    this.width = this.canvas.width;
+    this.height = this.canvas.height;
+  }
+
+  initStarfield() {
+    for (let i = 0; i < 120; i++) {
+      this.starfield.push({
+        x: Math.random() * 2000 - 1000,
+        y: Math.random() * 2000 - 1000,
+        z: Math.random() * 500 + 100,
+        size: 0.5 + Math.random() * 1.5,
+        twinkle: Math.random() * Math.PI * 2,
+      });
+    }
+  }
+
+  render(camera, pyramid, game, dt) {
+    this.ctx.save();
+    this.frameTime += dt;
+    this.updateEffects(dt);
+    this.cx = this.width / 2;
+    this.cy = this.height / 2;
+
+    this.ctx.fillStyle = '#0a0a1a';
+    this.ctx.fillRect(0, 0, this.width, this.height);
+
+    this.renderStarfield(camera);
+
+    if (pyramid) {
+      this.ctx.save();
+      this.ctx.translate(this.cx, this.cy);
+      pyramid.render(this.ctx, camera, this.width, this.height);
+      this.ctx.restore();
+    }
+
+    this.renderVignette();
+    this.renderHoverTarget(game);
+    this.renderRipples(game);
+    this.renderScreenFlash();
+
+    this.ctx.restore();
+  }
+
+  renderStarfield(camera) {
+    const cx = this.width / 2;
+    const cy = this.height / 2;
+    const t = this.frameTime;
+
+    for (const star of this.starfield) {
+      const twinkle = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(t * 0.5 + star.twinkle));
+      const sx = cx + (star.x - camera.lookAt[0]) / (star.z / 300);
+      const sy = cy + (star.y - camera.lookAt[2]) / (star.z / 300);
+      const size = star.size * (300 / star.z);
+
+      this.ctx.fillStyle = `rgba(255,255,255,${twinkle * 0.3})`;
+      this.ctx.beginPath();
+      this.ctx.arc(sx, sy, size, 0, Math.PI * 2);
+      this.ctx.fill();
+    }
+  }
+
+  renderVignette() {
+    const g = this.ctx.createRadialGradient(
+      this.width / 2, this.height / 2, this.height * 0.25,
+      this.width / 2, this.height / 2, this.height * 0.8
+    );
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(1, 'rgba(0,0,0,0.4)');
+    this.ctx.fillStyle = g;
+    this.ctx.fillRect(0, 0, this.width, this.height);
+  }
+
+  renderRipples(game) {
+    if (!game || !game.selectedVertex) return;
+    const layer = game.pyramid.currentLayer;
+    if (!layer) return;
+    const s = layer.getVertexScreen(game.selectedVertex, game.camera, game.pyramid.rotY);
+    if (!s) return;
+    const t = this.frameTime;
+    const cx = this.cx + s.sx;
+    const cy = this.cy + s.sy;
+
+    const pulse = 0.5 + 0.5 * Math.sin(t * 3);
+    const expand = ((t * 60) % 50);
+
+    this.ctx.save();
+
+    this.ctx.strokeStyle = `rgba(255, 220, 100, ${0.6 + pulse * 0.3})`;
+    this.ctx.lineWidth = 2;
+    for (let r = 1; r < 3; r++) {
+      const radius = r * 15 + expand + pulse * 4;
+      this.ctx.globalAlpha = Math.max(0, 1 - (radius / 60));
+      this.ctx.beginPath();
+      this.ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      this.ctx.stroke();
+    }
+
+    this.ctx.globalAlpha = 0.7 + pulse * 0.3;
+    this.ctx.strokeStyle = '#ffd700';
+    this.ctx.lineWidth = 2;
+    const angle = t * 1.5;
+    this.ctx.beginPath();
+    this.ctx.arc(cx, cy, 30 + pulse * 5, angle, angle + Math.PI * 0.6);
+    this.ctx.stroke();
+    this.ctx.beginPath();
+    this.ctx.arc(cx, cy, 30 + pulse * 5, angle + Math.PI, angle + Math.PI * 1.6);
+    this.ctx.stroke();
+
+    this.ctx.globalAlpha = 0.2 + pulse * 0.2;
+    this.ctx.fillStyle = '#ffd700';
+    this.ctx.beginPath();
+    this.ctx.arc(cx, cy, 4 + pulse * 3, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    this.ctx.restore();
+  }
+
+
+  renderHoverTarget(game) {
+    if (!game || !game.hoveredVertex || game.hoveredVertex === game.selectedVertex) return;
+    const layer = game.pyramid.currentLayer;
+    if (!layer) return;
+    const s = layer.getVertexScreen(game.hoveredVertex, game.camera, game.pyramid.rotY);
+    if (!s) return;
+    const t = this.frameTime;
+    const cx = this.cx + s.sx;
+    const cy = this.cy + s.sy;
+    const pulse = 0.5 + 0.5 * Math.sin(t * 5);
+    this.ctx.save();
+    this.ctx.globalAlpha = 0.55 + pulse * 0.25;
+    this.ctx.strokeStyle = '#ffffff';
+    this.ctx.lineWidth = 2;
+    this.ctx.beginPath();
+    this.ctx.arc(cx, cy, 34 + pulse * 6, 0, Math.PI * 2);
+    this.ctx.stroke();
+    this.ctx.globalAlpha = 0.18 + pulse * 0.12;
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.beginPath();
+    this.ctx.arc(cx, cy, 20 + pulse * 4, 0, Math.PI * 2);
+    this.ctx.fill();
+    this.ctx.restore();
+  }
+
+  renderScreenFlash() {
+    if (this.screenFlash <= 0.01) return;
+    const { r, g, b } = { r: this.screenFlashColor[0], g: this.screenFlashColor[1], b: this.screenFlashColor[2] };
+    this.ctx.fillStyle = `rgba(${r},${g},${b},${this.screenFlash * 0.15})`;
+    this.ctx.fillRect(0, 0, this.width, this.height);
+  }
+
+  updateEffects(dt) {
+    for (let i = this.placementRipples.length - 1; i >= 0; i--) {
+      const r = this.placementRipples[i];
+      r.radius += (r.maxRadius / 0.4) * dt;
+      r.life -= dt * 2.5;
+      if (r.life <= 0) this.placementRipples.splice(i, 1);
+    }
+    if (this.screenFlash > 0) {
+      this.screenFlash -= dt * 2;
+      if (this.screenFlash < 0) this.screenFlash = 0;
+    }
+  }
+}
+//=== ui.mjs ===
+
+class UI {
+  constructor(game) {
+    this.game = game;
+    this.elements = {};
+    this.transCallback = null;
+    this._cache = {};
+    this._dirty = {};
+    this.transSystemShapeDef = null;
+    this.upgradeSelected = false;
+  }
+
+  localizeDOM() {
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      const key = el.getAttribute('data-i18n');
+      if (key) el.textContent = t(key);
+    });
+  }
+
+  init() {
+    loadLang();
+    this.localizeDOM();
+    this.createElementButtons();
+    this.bindEvents();
+    this.bindMenu();
+    this.bindLayerTransition();
+    this.bindHelpCard();
+    this.bindStartScreen();
+    this.bindTutorial();
+    this.buildVertexBars();
+    this.renderHelpText();
+    this.updateLangBar();
+    this._lastUpdateTime = 0;
+    this._updateThrottle = 80;
+  }
+
+  buildVertexBars() {
+    const container = document.getElementById('vertexStatus');
+    if (!container || !this.game) return;
+    const layer = this.game.pyramid.currentLayer;
+    if (!layer) return;
+    this._cache = {};
+    this._dirty = {};
+    container.innerHTML = '';
+    for (const key of layer.vertexKeys) {
+      const def = layer.vertices[key].def;
+      const bar = document.createElement('div');
+      bar.className = 'vertex-bar';
+      bar.id = `v${key}`;
+      const label = document.createElement('span'); label.className = 'vlabel'; label.textContent = t(def.labelKey);
+      const vbar = document.createElement('div'); vbar.className = 'vbar';
+      const fill = document.createElement('div'); fill.className = 'vfill'; fill.id = `v${key}fill`; vbar.appendChild(fill);
+      const elem = document.createElement('span'); elem.className = 'velem'; elem.id = `v${key}elem`;
+      const owner = document.createElement('span'); owner.className = 'vowner'; owner.id = `v${key}owner`;
+      bar.appendChild(label); bar.appendChild(vbar); bar.appendChild(elem); bar.appendChild(owner);
+      container.appendChild(bar);
+    }
+  }
+
+  createElementButtons() {
+    const panel = document.getElementById('elementButtons');
+    if (!panel) return;
+    panel.innerHTML = '';
+    ELEMENT_DEFS.forEach((el, idx) => {
+      const btn = document.createElement('button');
+      btn.className = 'elem-btn'; btn.dataset.key = el.key;
+      btn.title = `${t(el.nameKey)}: ${t(el.roleKey)}`;
+      btn.style.setProperty('--elem-color', el.color);
+      btn.style.animationDelay = `${idx * 0.08}s`;
+      const circle = document.createElement('div'); circle.className = 'elem-circle';
+      circle.style.borderColor = el.color;
+      circle.style.boxShadow = `0 0 10px ${el.color}44, inset 0 0 10px ${el.color}22`;
+      const label = document.createElement('span'); label.className = 'elem-label'; label.textContent = el.key;
+      const name = document.createElement('span'); name.className = 'elem-name'; name.textContent = el.name;
+      const rankBadge = document.createElement('span'); rankBadge.id = `rankBadge-${el.key}`; rankBadge.className = 'rank-badge'; rankBadge.textContent = t('rankAbbr')[0];
+      btn.appendChild(circle); circle.appendChild(label); btn.appendChild(name); btn.appendChild(rankBadge);
+      btn.addEventListener('click', () => { if (this.game) this.game.placeElement(el.key); });
+      btn.addEventListener('mouseenter', () => this.showPreview(el.key));
+      btn.addEventListener('focus', () => this.showPreview(el.key));
+      btn.addEventListener('mouseleave', () => this.clearPreview());
+      btn.addEventListener('blur', () => this.clearPreview());
+      panel.appendChild(btn);
+      this.elements[el.key] = { btn, circle, el };
+    });
+  }
+
+  bindEvents() {
+    window.addEventListener('resize', () => { if (this.game?.renderer) this.game.renderer.resize(); });
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { this.toggleMenu(); return; }
+      if (e.key === '?') { this.toggleHelpCard(); return; }
+      if (!this.game || !this.game.isPlayerTurn || !this.game.selectedVertex) return;
+      const keys = { h: 'H', f: 'F', s: 'S', c: 'C', b: 'B' };
+      const key = keys[e.key.toLowerCase()];
+      if (key) this.game.placeElement(key);
+    });
+  }
+
+  bindMenu() {
+    document.getElementById('menuBtn')?.addEventListener('click', () => this.toggleMenu());
+    document.getElementById('closeBtn')?.addEventListener('click', () => this.requestClose());
+    document.getElementById('startCloseBtn')?.addEventListener('click', () => this.requestClose());
+    document.getElementById('menuOverlay')?.addEventListener('click', (e) => {
+      const action = e.target.dataset.action;
+      if (action) this.handleMenuAction(action);
+    });
+    document.getElementById('gameOverOverlay')?.addEventListener('click', (e) => {
+      if (e.target.dataset.action === 'restart') { this.game?.clearSave(); location.reload(); }
+    });
+    document.getElementById('closeOverlay')?.addEventListener('click', (e) => {
+      const action = e.target.dataset.action;
+      if (action === 'return') this.hideOverlay('closeOverlay');
+      if (action === 'close-tab') this.tryCloseTab();
+    });
+  }
+
+  toggleMenu() {
+    const menu = document.getElementById('menuOverlay');
+    if (!menu) return;
+    menu.classList.contains('hidden') ? this.showOverlay('menuOverlay') : this.hideOverlay('menuOverlay');
+  }
+
+  handleMenuAction(action) {
+    switch (action) {
+      case 'resume': this.hideOverlay('menuOverlay'); break;
+      case 'how': this.hideOverlay('menuOverlay'); this.showOverlay('startOverlay'); break;
+      case 'mute': {
+        const audio = this.game?.audio;
+        if (!audio) break;
+        const muted = audio.toggleMute();
+        if (!muted) audio.resume();
+        this.showFeedback(t(muted ? 'feedbackAudioOff' : 'feedbackAudioOn'), 'info');
+        break;
+      }
+      case 'restart': this.game?.clearSave(); location.reload(); break;
+      case 'close': this.hideOverlay('menuOverlay'); this.requestClose(); break;
+    }
+  }
+
+  requestClose() {
+    try { this.game?.saveGame?.(); } catch (_) {}
+    ['startOverlay', 'menuOverlay', 'layerTransitionOverlay', 'gameOverOverlay'].forEach(id => this.hideOverlay(id));
+    const motto = document.querySelector('#closeOverlay .close-motto');
+    if (motto) motto.textContent = t('everyEndSeed');
+    this.showOverlay('closeOverlay');
+    this.showFeedback(t('everyEndSeed'), 'good');
+    document.title = `CYCLUS Prime — ${t('everyEndSeed')}`;
+  }
+
+  tryCloseTab() {
+    try { this.game?.saveGame?.(); } catch (_) {}
+    try { window.close(); } catch (_) {}
+    const desc = document.querySelector('#closeOverlay .close-desc');
+    if (desc) desc.textContent = t('closeDescManual');
+  }
+
+  showOverlay(id) { document.getElementById(id)?.classList.remove('hidden'); }
+  hideOverlay(id) { document.getElementById(id)?.classList.add('hidden'); }
+
+  showPreview(elementKey) {
+    const el = document.getElementById('movePreview');
+    if (!el || !this.game) return;
+    const preview = this.game.previewElement(elementKey);
+    if (!preview) { this.clearPreview(); return; }
+    const sign = preview.deltaMargin >= 0 ? '+' : '';
+    el.innerHTML = `<b>${elementKey} → ${preview.vertexKey}</b>
+      <span>${t('previewAffinity')} ${preview.affinity.toFixed(2)} · ${t('transMargin')} ${sign}${preview.deltaMargin.toFixed(2)}</span>
+      <small>${t(preview.traitKey)}</small>
+      <small>${t('previewProjected')}: ${preview.projectedWinner}</small>`;
+    el.classList.add('visible');
+  }
+
+  clearPreview() {
+    const el = document.getElementById('movePreview');
+    if (el) el.classList.remove('visible');
+  }
+
+  bindLayerTransition() {
+    document.getElementById('transSkipBtn')?.addEventListener('click', () => {
+      if (!this.transCallback) return;
+      const cb = this.transCallback;
+      const choice = this.transSystemShapeDef || 'skip';
+      this.transCallback = null; this.transSystemShapeDef = null; this.upgradeSelected = false;
+      this.hideOverlay('layerTransitionOverlay');
+      cb(choice);
+    });
+    document.getElementById('transShapeOptions')?.addEventListener('click', (e) => {
+      const btn = e.target.closest('.shape-option');
+      if (!btn || !this.transCallback) return;
+      const idx = parseInt(btn.dataset.idx, 10);
+      if (!isNaN(idx) && SHAPE_DEFS[idx]) {
+        const cb = this.transCallback;
+        this.transCallback = null; this.transSystemShapeDef = null; this.upgradeSelected = false;
+        this.hideOverlay('layerTransitionOverlay');
+        cb(SHAPE_DEFS[idx]);
+      }
+    });
+    document.getElementById('transUpgradeOptions')?.addEventListener('click', (e) => {
+      const btn = e.target.closest('.upgrade-option');
+      if (!btn || !this.game || this.upgradeSelected) return;
+      const key = btn.dataset.upgrade;
+      if (this.game.applyUpgrade(key)) {
+        this.upgradeSelected = true;
+        for (const child of btn.parentElement.children) child.disabled = true;
+        btn.classList.add('selected');
+      }
+    });
+  }
+
+  bindHelpCard() {
+    document.getElementById('helpToggle')?.addEventListener('click', () => this.toggleHelpCard());
+    document.getElementById('helpSkipBtn')?.addEventListener('click', () => this.closeHelpCard());
+    document.getElementById('langBar')?.addEventListener('click', (e) => {
+      const btn = e.target.closest('.lang-btn');
+      if (!btn) return;
+      const lang = btn.dataset.lang;
+      if (lang) { setLang(lang); this.localizeDOM(); this.renderHelpText(); this.updateLangBar(); this.updateHeaderLang(); }
+    });
+  }
+
+  updateHeaderLang() {
+    this.localizeDOM();
+    const closeOverlay = document.getElementById('closeOverlay');
+    if (closeOverlay && !closeOverlay.classList.contains('hidden')) {
+      const motto = closeOverlay.querySelector('.close-motto');
+      if (motto) motto.textContent = t('everyEndSeed');
+    }
+    this.update(this.game);
+  }
+
+  bindStartScreen() {
+    document.getElementById('startPlayBtn')?.addEventListener('click', () => { this.hideOverlay('startOverlay'); this.game?.startGame(); });
+    document.getElementById('startHowBtn')?.addEventListener('click', () => { this.toggleHelpCard(true); });
+    document.getElementById('startAudioBtn')?.addEventListener('click', () => {
+      const audio = this.game?.audio;
+      if (!audio) return;
+      const muted = audio.toggleMute();
+      if (!muted) audio.resume();
+      const btn = document.getElementById('startAudioBtn');
+      if (btn) btn.textContent = t(muted ? 'btnSoundOff' : 'btnSoundOn');
+      this.showFeedback(t(muted ? 'feedbackAudioOff' : 'feedbackAudioOn'), 'info');
+    });
+    document.getElementById('startResetBtn')?.addEventListener('click', () => { this.game?.clearSave(); location.reload(); });
+  }
+
+  bindTutorial() {
+    document.getElementById('tutorialSkipBtn')?.addEventListener('click', () => this.game?.skipTutorial());
+  }
+
+  toggleHelpCard(forceOpen = false) {
+    const overlay = document.getElementById('helpOverlay');
+    if (!overlay) return;
+    const open = forceOpen ? true : overlay.classList.contains('hidden');
+    overlay.classList.toggle('hidden', !open);
+    if (open) { this.renderHelpText(); this.updateLangBar(); }
+  }
+
+  closeHelpCard() {
+    const overlay = document.getElementById('helpOverlay');
+    if (overlay) overlay.classList.add('hidden');
+  }
+
+  renderHelpText() {
+    const el = document.getElementById('helpText');
+    if (!el) return;
+    el.innerHTML = `<p>${t('goal')}</p><p>${t('elements')}</p><p>${t('scoring')}</p><p>${t('loser')}</p>${t('helpKeys')}`;
+  }
+
+  updateLangBar() {
+    const bar = document.getElementById('langBar');
+    if (!bar) return;
+    const current = getLang();
+    bar.innerHTML = Object.keys(LANGUAGES).map(k =>
+      `<button class="lang-btn${k === current ? ' active' : ''}" data-lang="${k}">${LANGUAGES[k].flag}</button>`
+    ).join('');
+  }
+
+  showLayerTransition(detail, genome, prevGenome, nextCallback) {
+    this.transCallback = nextCallback;
+    this.transSystemShapeDef = null;
+    this.upgradeSelected = false;
+    const title = document.getElementById('transTitle');
+    const desc = document.getElementById('transDesc');
+    const options = document.getElementById('transShapeOptions');
+    const sysChoice = document.getElementById('transSystemChoice');
+    const sysShape = document.getElementById('transSystemShape');
+    const skipBtn = document.getElementById('transSkipBtn');
+    const upgradePanel = document.getElementById('transUpgradePanel');
+    const upgradeOptions = document.getElementById('transUpgradeOptions');
+
+    const delta = genome - prevGenome;
+    const deltaStr = delta >= 0 ? `+${delta.toFixed(2)}` : delta.toFixed(2);
+    const labelMap = {
+      player: { key: 'transPlayerWin', color: '#ffd700' },
+      system: { key: 'transSystemWin', color: '#ff4466' },
+      hybrid: { key: 'transHybrid', color: '#6c63ff' },
+    };
+    const r = labelMap[detail.winner] || labelMap.hybrid;
+    title.textContent = t(r.key); title.style.color = r.color;
+    const objectiveLine = detail.objective ? `<br>${t('transObjective')} ${t(detail.objective.labelKey)} — ${detail.objectiveAchieved ? '<span class="good-text">' + t('transCompleted') + '</span>' : '<span class="warn-text">' + t('transMissed') + '</span>'}` : '';
+    const affixLine = detail.affix ? `<br>${t('transAffix')} ${t(detail.affix.labelKey)}: ${t(detail.affix.descKey)}` : '';
+    const aiLine = detail.aiPersonality ? `<br>${t('transAI')} ${t(detail.aiPersonality.nameKey)}: ${t(detail.aiPersonality.descKey)}` : '';
+    const pressureLine = detail.pressure ? `<br>${t('transPressure')} ${detail.pressure.turn}/${detail.pressure.limit}${detail.converged ? ' · <span class="good-text">' + t('transConverged') + '</span>' : ''}${detail.convergenceReason && detail.convergenceReason !== 'normal' ? ' · ' + t('transReason') + ' ' + t('convergenceReason' + detail.convergenceReason[0].toUpperCase() + detail.convergenceReason.slice(1)) : ''}` : '';
+    desc.innerHTML = `${t('transGenome')} ${prevGenome.toFixed(2)} → ${genome.toFixed(2)} (${deltaStr})<br>
+      ${t('transLayerScore')} ${t('transYou')} ${detail.playerScore.toFixed(2)} / ${t('transSystemScore')} ${detail.systemScore.toFixed(2)} · ${t('transMargin')} ${detail.margin.toFixed(2)}<br>
+      ${t('transSignals')} ${t('transHarmony')} ${detail.harmony.toFixed(2)} · ${t('transTension')} ${detail.tension.toFixed(2)} · ${t('transBridge2')} ${detail.bridge.toFixed(2)} · ${t('transChaosRisk')} ${detail.chaosRisk.toFixed(2)}${pressureLine}${objectiveLine}${affixLine}${aiLine}`;
+
+    if (detail.objectiveAchieved && upgradePanel && upgradeOptions) {
+      upgradePanel.classList.remove('hidden');
+      upgradeOptions.innerHTML = this.game.getUpgradeChoices().map(u => `<button class="upgrade-option" data-upgrade="${u.key}"><b>${t(u.nameKey)}</b><span>${t(u.textKey)}</span></button>`).join('');
+    } else if (upgradePanel) {
+      upgradePanel.classList.add('hidden');
+      if (upgradeOptions) upgradeOptions.innerHTML = '';
+    }
+
+    const isPlayerLoss = detail.winner !== 'player';
+    if (isPlayerLoss) {
+      if (skipBtn) { skipBtn.textContent = t('btnSystemChoose'); skipBtn.title = t('tipSystemChoose'); }
+      options.innerHTML = '';
+      const unlocked = this.game?.getUnlockedShapeDefs ? this.game.getUnlockedShapeDefs() : SHAPE_DEFS;
+      for (const sd of unlocked) {
+        const idx = SHAPE_DEFS.indexOf(sd);
+        const opt = document.createElement('button'); opt.className = 'shape-option'; opt.dataset.idx = String(idx);
+        opt.style.setProperty('--shape-color', sd.style.badgeColor);
+        const tier = t(sd.tierKey).toUpperCase();
+        const iconClass = (sd.label || '').toLowerCase().replace(/[^a-z]/g, '-');
+        opt.innerHTML = `<div class="shape-icon shape-${iconClass}"></div><div class="shape-label">${t(sd.nameKey)}</div><div class="shape-info">${sd.vertexCount}v · ${tier}</div><div class="shape-mult">×${(0.4 + sd.vertexCount * 0.15).toFixed(2)}</div>`;
+        options.appendChild(opt);
+      }
+      options.classList.remove('hidden'); sysChoice.classList.add('hidden');
+    } else {
+      if (skipBtn) { skipBtn.textContent = t('btnContinue'); skipBtn.title = t('tipContinue'); }
+      const shape = this.game?.aiChooseShape ? this.game.aiChooseShape(genome) : 3;
+      const sd = SHAPE_DEFS.find(s => s.vertexCount === shape) || SHAPE_DEFS[0];
+      this.transSystemShapeDef = sd;
+      if (sysChoice) sysChoice.textContent = t('transSystemChoice', t(sd.nameKey));
+      options.classList.add('hidden'); sysChoice.classList.remove('hidden');
+    }
+    this.showOverlay('layerTransitionOverlay');
+  }
+
+  showFeedback(message, type = 'info') {
+    const stack = document.getElementById('feedbackStack');
+    if (!stack || !message) return;
+    const item = document.createElement('div');
+    item.className = `feedback-item ${type}`;
+    item.textContent = message;
+    stack.appendChild(item);
+    requestAnimationFrame(() => item.classList.add('visible'));
+    setTimeout(() => {
+      item.classList.remove('visible');
+      setTimeout(() => item.remove(), 350);
+    }, 2600);
+  }
+
+  showTutorial(text) {
+    const box = document.getElementById('tutorialHint');
+    const body = document.getElementById('tutorialText');
+    const kicker = document.getElementById('tutorialKicker');
+    if (!box || !body) return;
+    body.textContent = text;
+    if (kicker) kicker.textContent = t('tutorialKicker');
+    box.classList.remove('hidden');
+  }
+
+  hideTutorial() { document.getElementById('tutorialHint')?.classList.add('hidden'); }
+
+  _getEl(id) { if (!this._cache[id]) this._cache[id] = document.getElementById(id); return this._cache[id]; }
+  _setText(id, text) { const el = this._getEl(id); if (el && el.textContent !== text) el.textContent = text; }
+  _setStyle(id, prop, val) { const el = this._getEl(id); if (!el) return; const key = id + '.' + prop; if (this._dirty[key] !== val) { el.style[prop] = val; this._dirty[key] = val; } }
+
+  update(game) {
+    if (!game) return;
+    const now = performance.now();
+    if (now - this._lastUpdateTime < this._updateThrottle) return;
+    this._lastUpdateTime = now;
+    const state = game.getState();
+    const scores = state.scores || { playerScore: 0, systemScore: 0, margin: 0, coherence: 0.5 };
+    this._setText('genomeDisplay', `${t('headerGenome')}: ${state.genome.toFixed(2)} · ${t('headerBest')} ${state.bestLayer}`);
+    this._setText('playerScoreDisplay', `${t('headerPlayer')} ${scores.playerScore.toFixed(2)}`);
+    this._setText('systemScoreDisplay', `${t('headerSystem')} ${scores.systemScore.toFixed(2)}`);
+    this._setText('objectiveDisplay', state.currentObjective ? `${t('headerObjective')}: ${t(state.currentObjective.labelKey)}` : `${t('headerObjective')}: ${t('objectiveDefault')}`);
+    this._setText('upgradeDisplay', `${t('headerUpgrade')}: ${state.upgradeSummary || t('headerNone')}`);
+
+    const pct = ((state.genome - 0.05) / 0.90) * 100;
+    this._setStyle('playerGenomeFill', 'width', `${Math.max(0, Math.min(100, pct))}%`);
+    const sysGenome = 1 - state.genome;
+    const sysPct = ((sysGenome - 0.05) / 0.90) * 100;
+    this._setStyle('systemGenomeFill', 'width', `${Math.max(0, Math.min(100, sysPct))}%`);
+
+    const who = state.isPlayerTurn ? t('headerTurnYour') : t('headerTurnSystem');
+    this._setText('turnInfo', `${t('headerTurn')} ${state.turn} | ${who}`);
+    this._setStyle('turnInfo', 'color', state.isPlayerTurn ? '#ffd700' : '#6c63ff');
+    const pressure = state.pressure || { turn: state.turn, limit: state.vertexCount, remaining: 0 };
+    this._setText('layerInfo', `${t('headerLayer')} ${state.layer} (${pressure.turn}/${pressure.limit}) · ${t('headerCombo')} ${state.combo}`);
+    this._setText('pressureDisplay', `${t('headerPressure')}: ${pressure.remaining} ${t('headerPressureLeft')}`);
+    this._setStyle('pressureDisplay', 'color', pressure.remaining <= 1 ? '#ffcc66' : '#aaaacc');
+
+    this._setText('headerPlayerLabel', t('headerPlayer'));
+    this._setText('headerSystemLabel', t('headerSystem'));
+
+    /* v3.6 — Affix, AI personality, element rank display */
+    this._setText('affixBadge', state.affix ? `${t(state.affix.labelKey)}: ${t(state.affix.descKey)}` : '');
+    this._setText('aiPersonalityDisplay', state.aiPersonality ? `${t(state.aiPersonality.nameKey)}: ${t(state.aiPersonality.descKey)}` : '');
+    if (state.elementXP) {
+      const rankNames = t('rankAbbr');
+      const parts = Object.entries(state.elementXP).map(([k, xp]) => {
+        const rank = getElementRank(xp);
+        return `${k}${rankNames[rank]}${xp}`;
+      });
+      this._setText('elementRankDisplay', parts.join(' · '));
+      /* Update rank badges on element buttons */
+      for (const [k, xp] of Object.entries(state.elementXP)) {
+        const rank = getElementRank(xp);
+        const badgeEl = document.getElementById(`rankBadge-${k}`);
+        if (badgeEl) badgeEl.textContent = rankNames[rank];
+      }
+    }
+
+    const layer = game.pyramid.currentLayer;
+    if (layer?.shapeDef) {
+      this._setText('phaseBadge', t(layer.shapeDef.nameKey));
+      this._setStyle('phaseBadge', 'borderColor', layer.shapeDef.style.badgeColor);
+      this._setStyle('phaseBadge', 'color', layer.shapeDef.style.badgeColor);
+    }
+
+    let text, color;
+    if (state.awaitingStart) { text = t('statusAwaitingStart'); color = '#00ffaa'; }
+    else if (state.isPlayerTurn) {
+      if (state.selectedVertex) { text = t('statusSelected', state.selectedVertex); color = '#ffd700'; }
+      else { text = t('statusSelectVertex'); color = '#aaaacc'; }
+    } else { text = t('statusSystemTurn'); color = '#6c63ff'; }
+    this._setText('gameStatus', text); this._setStyle('gameStatus', 'color', color);
+
+    if (!layer) return;
+    for (const k of layer.vertexKeys) {
+      const v = layer.vertices[k];
+      const h = `${Math.round(v.charge * 100)}%`;
+      const bg = v.owner === 'player' ? '#ffd700' : v.owner === 'system' ? '#6c63ff' : '#333355';
+      this._setStyle(`v${k}fill`, 'height', h); this._setStyle(`v${k}fill`, 'background', bg);
+      this._setText(`v${k}owner`, v.owner === 'none' ? '' : v.owner === 'player' ? t('headerPlayer') : t('headerSystem'));
+      this._setStyle(`v${k}owner`, 'color', v.owner === 'player' ? '#ffd700' : '#6c63ff');
+      this._setText(`v${k}elem`, v.element || '');
+      this._setStyle(`v${k}`, 'opacity', v.owner !== 'none' ? '1' : '0.48');
+      this._setStyle(`v${k}`, 'outlineColor', state.selectedVertex === k ? '#ffd700' : 'transparent');
+    }
+    this.updateTurn(state);
+  }
+
+  updateTurn(state) {
+    const elemPanel = document.getElementById('elementPanel');
+    if (elemPanel) elemPanel.style.display = state.isPlayerTurn && state.selectedVertex && !state.gameOver && !state.awaitingStart ? 'flex' : 'none';
+  }
+
+  showGameOver(winner, genome) {
+    const title = document.getElementById('gameOverTitle');
+    const desc = document.getElementById('gameOverDesc');
+    if (winner === 'player') {
+      title.textContent = t('gameoverPlayerTitle'); title.style.color = '#00ffaa';
+      desc.textContent = t('gameoverPlayerDesc', genome.toFixed(2));
+    } else {
+      title.textContent = t('gameoverSystemTitle'); title.style.color = '#ff4466';
+      desc.textContent = t('gameoverSystemDesc', genome.toFixed(2));
+    }
+    this.game?.clearSave();
+    this.showOverlay('gameOverOverlay');
+  }
+}
+//=== game.mjs ===
+
+const OBJECTIVES = [
+  { id: 'coherence70', label: 'Win with coherence \u2265 0.70', hint: 'Use vertex affinity and friendly neighbor compatibility.', labelKey: 'objCoherence70', hintKey: 'objCoherence70Hint' },
+  { id: 'bridge2', label: 'Place Bridge twice and avoid collapse', hint: 'Bridge stabilizes weak matches and protects mixed patterns.', labelKey: 'objBridge2', hintKey: 'objBridge2Hint' },
+  { id: 'chaosLow', label: 'Contain Chaos risk below 0.20', hint: 'Use Chaos only on Tension, Pulse, or Xeno when it pays off.', labelKey: 'objChaosLow', hintKey: 'objChaosLowHint' },
+  { id: 'adjacentPair', label: 'Capture two adjacent vertices', hint: 'Adjacent friendly cells amplify the layer score.', labelKey: 'objAdjacentPair', hintKey: 'objAdjacentPairHint' },
+  { id: 'margin2', label: 'Win by margin \u2265 2.00', hint: 'Pick strong vertex-element matches before the System blocks them.', labelKey: 'objMargin2', hintKey: 'objMargin2Hint' },
+];
+
+const UPGRADE_DEFS = [
+  { key: 'stabilize', name: 'Stabilize', text: 'System losses hurt 10% less.', nameKey: 'upgradeStabilize', textKey: 'upgradeStabilizeText' },
+  { key: 'resonance', name: 'Resonance', text: 'Frequency placements gain extra charge.', nameKey: 'upgradeResonance', textKey: 'upgradeResonanceText' },
+  { key: 'scaffold', name: 'Scaffold', text: 'Structure placements gain extra charge.', nameKey: 'upgradeScaffold', textKey: 'upgradeScaffoldText' },
+  { key: 'bridgeMemory', name: 'Bridge Memory', text: 'Bridge objective bonuses are stronger.', nameKey: 'upgradeBridgeMemory', textKey: 'upgradeBridgeMemoryText' },
+  { key: 'entropyControl', name: 'Entropy Control', text: 'Chaos penalties are softened.', nameKey: 'upgradeEntropyControl', textKey: 'upgradeEntropyControlText' },
+];
+
+class CyclusPrime {
+  constructor() {
+    this.canvas = document.getElementById('gameCanvas');
+    this.renderer = new Renderer(this.canvas);
+    this.camera = new Camera();
+    this.pyramid = new Pyramid();
+    this.audio = new AudioSystem();
+    this.ui = new UI(this);
+
+    this.genome = 0.50;
+    this.isPlayerTurn = true;
+    this.selectedVertex = null;
+    this.hoveredVertex = null;
+    this.pointerState = null;
+    this.pointerDragThreshold = 6;
+    this.turnCount = 0;
+    this.layerPressure = { limit: 3, forced: false, converged: false, reason: 'normal' };
+    this.layerArchive = [];
+    this.maxActiveLayers = 3;
+    this.layerIndex = 0;
+    this.elapsedTime = 0;
+    this.lastTime = 0;
+    this.running = false;
+    this.gameOver = false;
+    this.showingResult = false;
+    this.bestLayer = 0;
+    this.combo = 0;
+    this.lastResultDetail = null;
+    this.saveKey = 'cyclus_prime_v371_save';
+    this.awaitingStart = false;
+    this._pendingSystemTimer = null;
+
+    this.currentObjective = this.generateObjective(0);
+    this.objectiveStreak = 0;
+    this.tutorialStep = 0;
+    this.tutorialComplete = false;
+    this.upgrades = { stabilize: 0, resonance: 0, scaffold: 0, bridgeMemory: 0, entropyControl: 0 };
+    this.analytics = { enabled: false, events: [] };
+
+    /* v3.6 — Element XP, Layer Affixes, AI Personalities, Layer Scars */
+    this.elementXP = { H: 0, F: 0, S: 0, C: 0, B: 0 };
+    this.currentAffix = null;
+    this.aiPersonality = AI_PERSONALITIES[0];
+    this.layerScars = {}; // { vertexKey: affinity bonus } carried across layers
+    this.lastPlayerVertices = []; // vertices held by player at end of last layer
+  }
+
+  init() {
+    this.audio.init();
+    const loaded = this.tryLoad();
+    this.ui.init();
+    this.setupCanvasEvents();
+    this.setupCameraControls();
+
+    if (!loaded) {
+      this.isPlayerTurn = Math.random() < 0.5;
+      this.awaitingStart = true;
+    }
+    this.ui.updateTurn(this.getState());
+
+    this.running = true;
+    this.lastTime = performance.now();
+    this.gameLoop(this.lastTime);
+
+    if (this.awaitingStart) {
+      this.ui.showOverlay('startOverlay');
+    } else if (!this.isPlayerTurn) {
+      this.scheduleSystemTurn(600);
+    }
+  }
+
+  startGame() {
+    if (!this.awaitingStart) return;
+    this.awaitingStart = false;
+    this.ui.hideOverlay('startOverlay');
+    this.track('cycle_started');
+    this.ui.update(this);
+    if (!this.tutorialComplete) this.ui.showTutorial(this.getTutorialText());
+    if (!this.isPlayerTurn) this.scheduleSystemTurn(350);
+  }
+
+  scheduleSystemTurn(delay = 500) {
+    if (this._pendingSystemTimer) clearTimeout(this._pendingSystemTimer);
+    this._pendingSystemTimer = setTimeout(() => {
+      this._pendingSystemTimer = null;
+      this.systemTurn();
+    }, delay);
+  }
+
+  setupCanvasEvents() {
+    const activate = () => this.audio.resume();
+    const canvas = this.canvas;
+
+    canvas.addEventListener('pointerdown', (e) => {
+      if (e.button !== undefined && e.button !== 0) return;
+      activate();
+      canvas.setPointerCapture?.(e.pointerId);
+      this.pointerState = {
+        id: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        lastX: e.clientX,
+        lastY: e.clientY,
+        pointerType: e.pointerType || 'mouse',
+        dragging: false,
+      };
+      e.preventDefault();
+    }, { passive: false });
+
+    canvas.addEventListener('pointermove', (e) => {
+      if (this.pointerState && this.pointerState.id === e.pointerId) {
+        const dx = e.clientX - this.pointerState.startX;
+        const dy = e.clientY - this.pointerState.startY;
+        const dist = Math.hypot(dx, dy);
+        if (dist > this.pointerDragThreshold) {
+          if (!this.pointerState.dragging) {
+            this.pointerState.dragging = true;
+            this.camera.startDrag(this.pointerState.lastX, this.pointerState.lastY);
+          }
+          this.camera.moveDrag(e.clientX, e.clientY);
+        }
+        this.pointerState.lastX = e.clientX;
+        this.pointerState.lastY = e.clientY;
+        if (!this.pointerState.dragging) this.updateHoveredVertex(e.clientX, e.clientY, this.pointerState.pointerType);
+      } else {
+        this.updateHoveredVertex(e.clientX, e.clientY, e.pointerType || 'mouse');
+      }
+      e.preventDefault();
+    }, { passive: false });
+
+    const finishPointer = (e) => {
+      const state = this.pointerState;
+      if (state && state.id === e.pointerId) {
+        if (state.dragging) {
+          this.camera.endDrag();
+        } else {
+          this.selectVertexAt(e.clientX, e.clientY, state.pointerType);
+        }
+        this.pointerState = null;
+        canvas.releasePointerCapture?.(e.pointerId);
+        this.updateHoveredVertex(e.clientX, e.clientY, e.pointerType || state.pointerType || 'mouse');
+        e.preventDefault();
+      }
+    };
+    canvas.addEventListener('pointerup', finishPointer, { passive: false });
+    canvas.addEventListener('pointercancel', (e) => {
+      if (this.pointerState && this.pointerState.id === e.pointerId) {
+        this.camera.endDrag();
+        this.pointerState = null;
+        this.hoveredVertex = null;
+        canvas.releasePointerCapture?.(e.pointerId);
+      }
+    }, { passive: false });
+    canvas.addEventListener('pointerleave', () => {
+      if (!this.pointerState) this.hoveredVertex = null;
+    });
+  }
+
+  setupCameraControls() {
+    this.canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const amount = Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY), 60) * 0.3;
+      this.camera.zoom(amount);
+    }, { passive: false });
+  }
+
+  getCanvasRelativePoint(clientX, clientY) {
+    const rect = this.canvas.getBoundingClientRect();
+    const scaleX = this.canvas.width / Math.max(1, rect.width);
+    const scaleY = this.canvas.height / Math.max(1, rect.height);
+    const x = (clientX - rect.left) * scaleX;
+    const y = (clientY - rect.top) * scaleY;
+    return { x, y, rx: x - this.canvas.width / 2, ry: y - this.canvas.height / 2 };
+  }
+
+  getSelectionRadius(pointerType = 'mouse') {
+    const base = pointerType === 'touch' || pointerType === 'pen' ? 76 : 60;
+    return base * Math.max(0.85, Math.min(1.35, this.camera.radius / 500));
+  }
+
+  findSelectableVertexAt(clientX, clientY, pointerType = 'mouse') {
+    if (!this.isPlayerTurn || this.gameOver || this.showingResult || this.awaitingStart) return null;
+    const layer = this.pyramid.currentLayer;
+    if (!layer) return null;
+    const { rx, ry } = this.getCanvasRelativePoint(clientX, clientY);
+    const radius = this.getSelectionRadius(pointerType);
+    const radiusSq = radius * radius;
+    let closest = null;
+    let closestDist = Infinity;
+
+    for (const key of layer.vertexKeys) {
+      const v = layer.vertices[key];
+      if (v.owner !== 'none') continue;
+      const s = layer.getVertexScreen(key, this.camera, this.pyramid.rotY);
+      if (!s) continue;
+      const dx = rx - s.sx;
+      const dy = ry - s.sy;
+      const d = dx * dx + dy * dy;
+      if (d < closestDist && d <= radiusSq) { closestDist = d; closest = key; }
+    }
+    return closest;
+  }
+
+  updateHoveredVertex(clientX, clientY, pointerType = 'mouse') {
+    const next = this.findSelectableVertexAt(clientX, clientY, pointerType);
+    if (next !== this.hoveredVertex) {
+      this.hoveredVertex = next;
+      this.canvas.style.cursor = next ? 'pointer' : (this.pointerState?.dragging ? 'grabbing' : 'grab');
+    }
+  }
+
+  selectVertexAt(clientX, clientY, pointerType = 'mouse') {
+    const closest = this.findSelectableVertexAt(clientX, clientY, pointerType);
+    if (closest) {
+      this.selectedVertex = closest;
+      this.hoveredVertex = closest;
+      this.audio.playSelect();
+      this.noteTutorial('select_vertex');
+      this.ui.showFeedback(t('feedbackSelected', closest), 'info');
+      this.ui.update(this);
+    }
+  }
+
+  handleCanvasClick(e) {
+    this.selectVertexAt(e.clientX, e.clientY, e.pointerType || 'mouse');
+  }
+
+  placementCharge(elementKey, owner) {
+    let charge = owner === 'player' ? 0.85 : 0.75;
+    if (owner === 'player' && elementKey === 'F') charge += this.upgrades.resonance * 0.025;
+    if (owner === 'player' && elementKey === 'S') charge += this.upgrades.scaffold * 0.025;
+    if (owner === 'player' && elementKey === 'C') charge += this.upgrades.entropyControl * 0.012;
+    return Math.min(0.95, charge);
+  }
+
+  applyAffixFollowup(owner, elementKey, originVertexKey) {
+    const affixId = this.currentAffix?.id;
+    if (affixId !== 'cascade' && affixId !== 'gravity_well') return null;
+    const layer = this.pyramid.currentLayer;
+    if (!layer) return null;
+    let targetKey = null;
+    let charge = 0.42;
+
+    if (affixId === 'cascade') {
+      const candidates = this.getAdjacentEmptyVertices(layer, originVertexKey);
+      if (candidates.length === 0) return null;
+      targetKey = candidates
+        .map(k => ({ key: k, affinity: this.previewFollowupAffinity(k, elementKey) }))
+        .sort((a, b) => b.affinity - a.affinity || a.key.localeCompare(b.key))[0].key;
+      charge = 0.42;
+    }
+
+    if (affixId === 'gravity_well') {
+      targetKey = this.getOppositeEmptyVertex(layer, originVertexKey);
+      if (!targetKey) return null;
+      charge = 0.50;
+    }
+
+    if (!targetKey) return null;
+    const placed = layer.place(targetKey, elementKey, owner, charge);
+    if (!placed) return null;
+    this.track('affix_followup', { affix: affixId, owner, element: elementKey, origin: originVertexKey, target: targetKey, charge });
+    return { affix: affixId, owner, element: elementKey, origin: originVertexKey, target: targetKey, charge };
+  }
+
+  getAdjacentEmptyVertices(layer, vertexKey) {
+    const idx = layer.vertexKeys.indexOf(vertexKey);
+    if (idx < 0) return [];
+    const n = layer.vertexKeys.length;
+    return [layer.vertexKeys[(idx - 1 + n) % n], layer.vertexKeys[(idx + 1) % n]]
+      .filter(k => layer.vertices[k]?.owner === 'none');
+  }
+
+  getOppositeEmptyVertex(layer, vertexKey) {
+    const idx = layer.vertexKeys.indexOf(vertexKey);
+    const n = layer.vertexKeys.length;
+    if (idx < 0 || n < 4) return null;
+    const order = [Math.floor(n / 2), Math.ceil(n / 2), Math.floor(n / 2) - 1, Math.ceil(n / 2) + 1];
+    for (const offset of order) {
+      const key = layer.vertexKeys[(idx + offset + n) % n];
+      if (layer.vertices[key]?.owner === 'none') return key;
+    }
+    return null;
+  }
+
+  previewFollowupAffinity(vertexKey, elementKey) {
+    const rankBonuses = this.getRankBonuses();
+    const layer = this.pyramid.currentLayer;
+    if (!layer) return 0;
+    const preview = previewPlacement(layer, vertexKey, elementKey, 'player', null, rankBonuses, this.layerScars);
+    return preview.affinity;
+  }
+
+  placeElement(key) {
+    if (!this.isPlayerTurn || !this.selectedVertex || this.gameOver || this.awaitingStart) return;
+    const layer = this.pyramid.currentLayer;
+    const vertexKey = this.selectedVertex;
+    if (layer.vertices[vertexKey].owner !== 'none') return;
+
+    const rankBonuses = this.getRankBonuses();
+    const preview = previewPlacement(layer, vertexKey, key, 'player', this.currentAffix, rankBonuses, this.layerScars);
+    layer.place(vertexKey, key, 'player', this.placementCharge(key, 'player'));
+    const followup = this.applyAffixFollowup('player', key, vertexKey);
+    this.renderer.flashScreen(layer.vertices[vertexKey].def.playerColor, 0.35);
+    this.audio.playPlace(key);
+
+    /* v3.6 — Track element XP */
+    const prevRank = getElementRank(this.elementXP[key] || 0);
+    this.elementXP[key] = (this.elementXP[key] || 0) + 1;
+    const newRank = getElementRank(this.elementXP[key]);
+    if (newRank > prevRank) {
+      const elNameKey = ELEMENT_DEFS.find(e => e.key === key)?.nameKey;
+      this.ui.showFeedback(t('feedbackRankUp', t(elNameKey), t(RANK_NAME_KEYS[newRank])), 'good');
+    }
+
+    this.turnCount++;
+    this.selectedVertex = null;
+    this.noteTutorial('place_element');
+    this.showMoveFeedback(key, preview);
+    if (followup) this.ui.showFeedback(`${this.currentAffix.label}: ${followup.element} -> ${followup.target}`, 'info');
+    this.track('player_move', { key, vertexKey, deltaMargin: preview.deltaMargin });
+
+    if (this.shouldResolveLayer()) {
+      this.handleLayerEnd();
+    } else {
+      this.isPlayerTurn = false;
+      this.ui.update(this);
+      this.scheduleSystemTurn(500);
+    }
+  }
+
+  showMoveFeedback(key, preview) {
+    const elNameKey = ELEMENT_DEFS.find(e => e.key === key)?.nameKey;
+    let msg, type;
+    if (key === 'B') {
+      msg = t('feedbackBridge', t(preview.traitKey));
+      type = 'good';
+    } else if (key === 'C') {
+      msg = preview.after.chaosRisk > preview.before.chaosRisk ? t('feedbackChaosRise') : t('feedbackChaosCtrl');
+      type = 'info';
+    } else if (preview.affinity >= 0.85) {
+      msg = t('feedbackPerfectAff', t(elNameKey));
+      type = 'good';
+    } else {
+      msg = t('feedbackPlaced', t(elNameKey), preview.deltaMargin >= 0 ? '+' : '', preview.deltaMargin.toFixed(2));
+      type = preview.deltaMargin >= 0 ? 'good' : 'warn';
+    }
+    this.ui.showFeedback(msg, type);
+  }
+
+  getRankBonuses() {
+    const rv = {};
+    for (const k of Object.keys(this.elementXP)) {
+      const rank = getElementRank(this.elementXP[k]);
+      rv[k] = getRankBonus(k, rank, null);
+    }
+    return rv;
+  }
+
+  systemTurn() {
+    if (this.gameOver || this.showingResult || this.awaitingStart) return;
+    const layer = this.pyramid.currentLayer;
+    const empty = layer.getEmptyVertices();
+    if (empty.length === 0) { this.handleLayerEnd(); return; }
+
+    const systemKeys = Object.entries(layer.vertices).filter(([, v]) => v.owner === 'system').map(([k]) => k);
+    const playerKeys = Object.entries(layer.vertices).filter(([, v]) => v.owner === 'player').map(([k]) => k);
+    const difficulty = Math.min(1, 0.6 + this.layerIndex * 0.05);
+    const rankBonuses = this.getRankBonuses();
+    let bestScore = -Infinity;
+    let bestMove = { vertex: empty[0], element: 'H' };
+
+    for (const vKey of empty) {
+      for (const elem of ELEMENT_DEFS) {
+        const score = evaluateAIMove(layer, vKey, elem.key, systemKeys, playerKeys, difficulty, this.aiPersonality, this.currentAffix, rankBonuses, this.layerScars);
+        if (score > bestScore) { bestScore = score; bestMove = { vertex: vKey, element: elem.key }; }
+      }
+    }
+
+    const preview = previewPlacement(layer, bestMove.vertex, bestMove.element, 'system', this.currentAffix, rankBonuses, this.layerScars);
+    layer.place(bestMove.vertex, bestMove.element, 'system', this.placementCharge(bestMove.element, 'system'));
+    const followup = this.applyAffixFollowup('system', bestMove.element, bestMove.vertex);
+    this.renderer.flashScreen(layer.vertices[bestMove.vertex].def.systemColor, 0.28);
+    this.audio.playPlace(bestMove.element);
+    this.turnCount++;
+    this.noteTutorial('system_responded');
+    this.ui.showFeedback(t('feedbackSystemMove', t(this.aiPersonality.nameKey), bestMove.element, bestMove.vertex), preview.deltaMargin < 0 ? 'danger' : 'info');
+    if (followup) this.ui.showFeedback(`${this.currentAffix.label}: ${followup.element} -> ${followup.target}`, 'warn');
+    this.track('system_move', bestMove);
+
+    if (this.shouldResolveLayer()) {
+      this.handleLayerEnd();
+    } else {
+      this.isPlayerTurn = true;
+      this.selectedVertex = null;
+      this.ui.update(this);
+    }
+  }
+
+
+  getLayerTurnLimit(shapeDef = this.pyramid.currentLayer?.shapeDef) {
+    const count = shapeDef?.vertexCount || this.pyramid.currentLayer?.vertexCount || 3;
+    const limits = { 3: 3, 4: 4, 5: 5, 6: 6, 8: 7, 10: 8 };
+    return limits[count] || Math.max(4, Math.min(count, 8));
+  }
+
+  getLayerPressureState() {
+    const limit = this.getLayerTurnLimit();
+    const remaining = Math.max(0, limit - this.turnCount);
+    const ratio = limit > 0 ? Math.min(1, this.turnCount / limit) : 0;
+    return {
+      limit,
+      turn: this.turnCount,
+      remaining,
+      ratio,
+      layerArchiveCount: this.layerArchive.length,
+      forced: this.turnCount >= limit,
+    };
+  }
+
+  shouldResolveLayer() {
+    const layer = this.pyramid.currentLayer;
+    if (!layer) return false;
+    return layer.hasCompleted() || this.turnCount >= this.getLayerTurnLimit(layer.shapeDef);
+  }
+
+  resolveLayerConvergence(detail, forcedByPressure = false) {
+    const threshold = 0.35;
+    const margin = Number(detail.margin || 0);
+    const tight = Math.abs(margin) <= threshold;
+    detail.pressure = this.getLayerPressureState();
+    detail.forcedByPressure = Boolean(forcedByPressure);
+    detail.converged = Boolean(forcedByPressure || tight || detail.winner === 'hybrid');
+    detail.originalWinner = detail.winner;
+    detail.convergenceReason = forcedByPressure ? 'pressure' : tight ? 'tight' : detail.winner === 'hybrid' ? 'hybrid' : 'normal';
+
+    if (!detail.converged) return detail;
+
+    const bridgeControl = Number(detail.bridge || 0);
+    const coherence = Number(detail.coherence || 0.5);
+    const chaosRisk = Number(detail.chaosRisk || 0);
+    let playerTiebreak = 0;
+    let systemTiebreak = 0;
+
+    if (margin > threshold) playerTiebreak += 2;
+    if (margin < -threshold) systemTiebreak += 2;
+    if (coherence >= 0.62) playerTiebreak += 1;
+    if (bridgeControl >= 0.32) playerTiebreak += 1;
+    if (chaosRisk >= 0.34) systemTiebreak += 1;
+    if (coherence < 0.46) systemTiebreak += 1;
+    if (forcedByPressure && this.isPlayerTurn === false) playerTiebreak += 0.25;
+    if (forcedByPressure && this.isPlayerTurn === true) systemTiebreak += 0.25;
+
+    if (playerTiebreak > systemTiebreak) detail.winner = 'player';
+    else if (systemTiebreak > playerTiebreak) detail.winner = 'system';
+    else detail.winner = margin >= 0 ? 'player' : 'system';
+
+    detail.convergenceScore = { player: playerTiebreak, system: systemTiebreak };
+    return detail;
+  }
+
+  handleLayerEnd() {
+    this.showingResult = true;
+    const rankBonuses = this.getRankBonuses();
+    const forcedByPressure = !this.pyramid.currentLayer.hasCompleted() && this.turnCount >= this.getLayerTurnLimit();
+    const detail = this.resolveLayerConvergence(this.evaluateLayer(), forcedByPressure);
+    this.lastResultDetail = detail;
+    detail.affix = this.currentAffix;
+    detail.aiPersonality = this.aiPersonality;
+    const prevGenome = this.genome;
+    detail.objective = this.currentObjective;
+    detail.objectiveAchieved = this.checkObjective(detail);
+    if (detail.objectiveAchieved) {
+      this.objectiveStreak += 1;
+      this.audio.playCombo(Math.max(1, this.objectiveStreak));
+    } else {
+      this.objectiveStreak = 0;
+    }
+
+    if (detail.converged) {
+      this.ui.showFeedback(t('feedbackConvergence'), detail.winner === 'player' ? 'good' : detail.winner === 'system' ? 'danger' : 'warn');
+    }
+
+    /* v3.6 — Record player vertices for scar generation */
+    const layer = this.pyramid.currentLayer;
+    this.lastPlayerVertices = Object.entries(layer.vertices)
+      .filter(([, v]) => v.owner === 'player')
+      .map(([k]) => k);
+
+    this.applyGenomeDelta(detail);
+    this.track('layer_completed', { winner: detail.winner, objectiveAchieved: detail.objectiveAchieved, layer: this.layerIndex, affix: this.currentAffix?.id, aiPersonality: this.aiPersonality.id, pressure: detail.pressure, converged: detail.converged, convergenceReason: detail.convergenceReason });
+
+    if (this.genome >= 0.95) { this.gameOver = true; this.clearSave(); this.ui.showGameOver('player', this.genome); return; }
+    if (this.genome <= 0.05) { this.gameOver = true; this.clearSave(); this.ui.showGameOver('system', this.genome); return; }
+    this.saveGame();
+
+    this.ui.showLayerTransition(detail, this.genome, prevGenome, (choice) => {
+      this.showingResult = false;
+      let shape;
+      if (choice === 'skip') {
+        shape = getShapeDef(this.aiChooseShape(this.genome));
+      } else {
+        shape = choice;
+      }
+      this.advanceLayer(shape);
+    });
+  }
+
+  applyGenomeDelta(detail) {
+    const shape = this.pyramid.currentLayer.shapeDef;
+    const shapeMult = 0.4 + shape.vertexCount * 0.15;
+    const layerBonus = 1 + this.layerIndex * 0.12;
+    const marginBonus = Math.min(0.08, Math.abs(detail.margin) * 0.012);
+    const objectiveBonus = detail.objectiveAchieved ? 0.028 + this.upgrades.bridgeMemory * 0.006 : 0;
+    const mult = shapeMult * layerBonus;
+    const playerDelta = (0.075 + marginBonus + objectiveBonus) * mult;
+    const lossSoftener = 1 - Math.min(0.28, this.upgrades.stabilize * 0.10);
+    const systemDelta = (0.085 + marginBonus) * mult * lossSoftener;
+    const chaosSoftener = 1 - Math.min(0.30, this.upgrades.entropyControl * 0.10);
+    const hybridDelta = Math.max(0.035, (0.10 + detail.chaosRisk * 0.02) * mult * chaosSoftener);
+
+    if (detail.winner === 'player') {
+      this.combo += 1;
+      this.genome = Math.min(0.95, this.genome + playerDelta + Math.min(0.025, this.combo * 0.006));
+    } else if (detail.winner === 'system') {
+      this.combo = 0;
+      this.genome = Math.max(0.05, this.genome - systemDelta);
+    } else {
+      this.combo = 0;
+      this.genome = Math.max(0.05, Math.min(0.95, this.genome - hybridDelta));
+    }
+    this.genome = Math.round(this.genome * 100) / 100;
+  }
+
+  generateObjective(layerIndex = this.layerIndex) {
+    return OBJECTIVES[layerIndex % OBJECTIVES.length];
+  }
+
+  checkObjective(detail) {
+    const layer = this.pyramid.currentLayer;
+    const playerVertices = Object.entries(layer.vertices).filter(([, v]) => v.owner === 'player');
+    const playerElements = playerVertices.map(([, v]) => v.element);
+    switch (this.currentObjective?.id) {
+      case 'coherence70': return detail.winner === 'player' && detail.coherence >= 0.70;
+      case 'bridge2': return playerElements.filter(e => e === 'B').length >= 2 && detail.winner !== 'system';
+      case 'chaosLow': return detail.chaosRisk < 0.20 && detail.winner !== 'system';
+      case 'adjacentPair': return this.hasAdjacentPlayerPair(layer);
+      case 'margin2': return detail.winner === 'player' && detail.margin >= 2.0;
+      default: return false;
+    }
+  }
+
+  hasAdjacentPlayerPair(layer) {
+    for (let i = 0; i < layer.vertexKeys.length; i++) {
+      const a = layer.vertexKeys[i];
+      const b = layer.vertexKeys[(i + 1) % layer.vertexKeys.length];
+      if (layer.vertices[a].owner === 'player' && layer.vertices[b].owner === 'player') return true;
+    }
+    return false;
+  }
+
+  getUnlockedShapeDefs() {
+    const depth = Math.max(this.bestLayer, this.layerIndex);
+    // Core battlefield choice is now fully visible from the start for stronger
+    // market appeal: Triangle, Square, Pentagon, and Hexagon are always playable.
+    // Cubic battlefields stay advanced so they feel like a meaningful escalation.
+    return SHAPE_DEFS.filter(sd => (sd.vertexCount <= 6) ||
+      (sd.vertexCount === 8 && depth >= 6) ||
+      (sd.vertexCount === 10 && depth >= 9));
+  }
+
+  aiChooseShape(genome) {
+    const unlocked = this.getUnlockedShapeDefs();
+    const counts = unlocked.map(s => s.vertexCount);
+    const depth = Math.max(this.bestLayer, this.layerIndex);
+    let want;
+    if (depth >= 9 && genome < 0.28) want = 10;
+    else if (depth >= 6 && genome < 0.36) want = 8;
+    else if (Math.abs(genome - 0.5) > 0.3) want = genome > 0.5 ? 3 : 6;
+    else if (Math.abs(genome - 0.5) > 0.15) want = genome > 0.5 ? 4 : 5;
+    else want = Math.random() < 0.5 ? 4 : 5;
+    if (counts.includes(want)) return want;
+    return counts[counts.length - 1] || 3;
+  }
+
+
+  archiveOldLayers() {
+    const layers = this.pyramid.layers;
+    if (!Array.isArray(layers) || layers.length <= this.maxActiveLayers) return;
+    const removeCount = layers.length - this.maxActiveLayers;
+    const removed = layers.splice(0, removeCount);
+    for (const layer of removed) {
+      this.layerArchive.push({
+        level: layer.level,
+        shape: layer.shapeDef?.label || 'Layer',
+        vertexCount: layer.vertexCount,
+        player: Object.values(layer.vertices).filter(v => v.owner === 'player').length,
+        system: Object.values(layer.vertices).filter(v => v.owner === 'system').length,
+      });
+    }
+    this.layerArchive = this.layerArchive.slice(-12);
+    for (let i = 0; i < layers.length; i++) {
+      layers[i].level = i;
+      layers[i].baseY = i * 25;
+      layers[i].apexY = layers[i].baseY + 25;
+      layers[i].scale = Math.max(0.3, 1 - i * 0.11);
+      layers[i].R = 120 * layers[i].scale;
+    }
+  }
+
+  advanceLayer(shapeDef) {
+    this.pyramid.addLayer(shapeDef);
+    this.archiveOldLayers();
+    this.layerIndex++;
+    this.bestLayer = Math.max(this.bestLayer, this.layerIndex);
+    this.turnCount = 0;
+    this.selectedVertex = null;
+    this.showingResult = false;
+    this.currentObjective = this.generateObjective(this.layerIndex);
+    this.layerPressure = this.getLayerPressureState();
+
+    /* v3.6 — Assign layer affix */
+    this.currentAffix = AFFIX_DEFS[this.layerIndex % AFFIX_DEFS.length];
+
+    /* v3.6 — Assign AI personality (cycles through personalities) */
+    this.aiPersonality = AI_PERSONALITIES[this.layerIndex % AI_PERSONALITIES.length];
+
+    /* v3.6 — Generate layer scars from last player-held vertices */
+    const newScars = {};
+    const layer = this.pyramid.currentLayer;
+    if (this.lastPlayerVertices.length > 0) {
+      for (const oldKey of this.lastPlayerVertices) {
+        if (layer.vertices[oldKey]) {
+          newScars[oldKey] = 0.05;
+        }
+      }
+    }
+    this.layerScars = newScars;
+    if (Object.keys(newScars).length > 0) {
+      this.ui.showFeedback(t('feedbackScars', Object.keys(newScars).join(', '), (newScars[Object.keys(newScars)[0]] * 100).toFixed(0)), 'info');
+    }
+
+    this.isPlayerTurn = Math.random() < 0.5;
+    this.ui.buildVertexBars();
+    this.ui.update(this);
+    this.saveGame();
+    if (!this.tutorialComplete) this.ui.showTutorial(this.getTutorialText());
+    if (!this.isPlayerTurn) this.scheduleSystemTurn(600);
+  }
+
+  evaluateLayer() { return evaluateLayerScores(this.pyramid.currentLayer, null, this.currentAffix, this.getRankBonuses(), this.layerScars); }
+
+  previewElement(elementKey) {
+    this.noteTutorial('hover_element');
+    if (!this.selectedVertex || !this.pyramid.currentLayer) return null;
+    const v = this.pyramid.currentLayer.vertices[this.selectedVertex];
+    if (!v || v.owner !== 'none') return null;
+    return previewPlacement(this.pyramid.currentLayer, this.selectedVertex, elementKey, 'player', this.currentAffix, this.getRankBonuses(), this.layerScars);
+  }
+
+  getUpgradeChoices() {
+    const start = (this.layerIndex + this.objectiveStreak) % UPGRADE_DEFS.length;
+    return [0, 1, 2].map(i => UPGRADE_DEFS[(start + i) % UPGRADE_DEFS.length]);
+  }
+
+  applyUpgrade(key) {
+    if (!(key in this.upgrades)) return false;
+    this.upgrades[key] += 1;
+    const def = UPGRADE_DEFS.find(u => u.key === key);
+    this.ui.showFeedback(t('feedbackUpgraded', t(def?.nameKey || key), String(this.upgrades[key])), 'good');
+    this.saveGame();
+    return true;
+  }
+
+  getUpgradeSummary() {
+    return UPGRADE_DEFS.filter(u => this.upgrades[u.key] > 0).map(u => `${t(u.nameKey)} ${this.upgrades[u.key]}`).join(' · ');
+  }
+
+  getTutorialText() {
+    return tutorialStep(this.tutorialStep);
+  }
+
+  noteTutorial(event) {
+    if (this.tutorialComplete) return;
+    const order = ['select_vertex', 'hover_element', 'place_element', 'system_responded'];
+    const target = order[this.tutorialStep];
+    if (event === target) this.tutorialStep++;
+    if (this.tutorialStep >= order.length) {
+      this.tutorialComplete = true;
+      this.track('tutorial_completed');
+      this.ui.showFeedback(t('feedbackTutorialDone'), 'good');
+      this.saveGame();
+    } else {
+      this.ui.showTutorial(this.getTutorialText());
+    }
+  }
+
+  skipTutorial() {
+    this.tutorialComplete = true;
+    this.ui.hideTutorial();
+    this.saveGame();
+  }
+
+  track(name, data = {}) {
+    if (!this.analytics.enabled) return;
+    this.analytics.events.push({ name, data, at: Date.now() });
+    if (this.analytics.events.length > 200) this.analytics.events.shift();
+  }
+
+  safeStorage() {
+    try { const k = '__cyclus_test__'; localStorage.setItem(k, '1'); localStorage.removeItem(k); return localStorage; } catch (_) { return null; }
+  }
+
+  serialize() {
+    return {
+      version: 40,
+      genome: this.genome,
+      isPlayerTurn: this.isPlayerTurn,
+      selectedVertex: this.selectedVertex,
+      hoveredVertex: this.hoveredVertex,
+      turnCount: this.turnCount,
+      layerPressure: this.layerPressure,
+      layerArchive: this.layerArchive,
+      layerIndex: this.layerIndex,
+      bestLayer: this.bestLayer,
+      combo: this.combo,
+      gameOver: this.gameOver,
+      currentObjective: this.currentObjective,
+      objectiveStreak: this.objectiveStreak,
+      tutorialStep: this.tutorialStep,
+      tutorialComplete: this.tutorialComplete,
+      upgrades: this.upgrades,
+      elementXP: { ...this.elementXP },
+      currentAffix: this.currentAffix,
+      aiPersonality: this.aiPersonality,
+      layerScars: { ...this.layerScars },
+      lastPlayerVertices: [...this.lastPlayerVertices],
+      layers: this.pyramid.layers.map(layer => ({
+        vertexCount: layer.vertexCount,
+        shapeLabel: layer.shapeDef?.label || '',
+        vertices: Object.fromEntries(Object.entries(layer.vertices).map(([k, v]) => [k, { owner: v.owner, element: v.element, charge: v.charge }]))
+      }))
+    };
+  }
+
+  saveGame() {
+    const storage = this.safeStorage();
+    if (!storage || !this.pyramid?.layers?.length) return false;
+    try { storage.setItem(this.saveKey, JSON.stringify(this.serialize())); return true; } catch (_) { return false; }
+  }
+
+  clearSave() {
+    const storage = this.safeStorage();
+    if (storage) {
+      storage.removeItem(this.saveKey);
+      storage.removeItem('cyclus_prime_v31_save');
+      storage.removeItem('cyclus_prime_v35_save');
+      storage.removeItem('cyclus_prime_v36_cubic_save');
+      storage.removeItem('cyclus_prime_v364_pressure_save');
+      storage.removeItem('cyclus_prime_v366_hardening_save');
+    }
+  }
+
+  tryLoad() {
+    const storage = this.safeStorage();
+    if (!storage) return false;
+    try {
+      const raw = storage.getItem(this.saveKey) || storage.getItem('cyclus_prime_v364_pressure_save') || storage.getItem('cyclus_prime_v36_cubic_save') || storage.getItem('cyclus_prime_v31_save');
+      if (!raw) return false;
+      const data = JSON.parse(raw);
+      if (!data || !Array.isArray(data.layers) || data.version < 31) return false;
+      this.pyramid.layers = [];
+      for (const layerData of data.layers) {
+        const shape = getShapeDef(layerData.vertexCount);
+        this.pyramid.addLayer(shape);
+        const layer = this.pyramid.currentLayer;
+        for (const [k, saved] of Object.entries(layerData.vertices || {})) {
+          if (!layer.vertices[k]) continue;
+          layer.vertices[k].owner = saved.owner || 'none';
+          layer.vertices[k].element = saved.element || null;
+          layer.vertices[k].charge = Number(saved.charge || 0);
+        }
+      }
+      this.genome = Number(data.genome ?? 0.5);
+      this.isPlayerTurn = Boolean(data.isPlayerTurn);
+      this.selectedVertex = data.selectedVertex || null;
+      this.turnCount = Number(data.turnCount || 0);
+      this.layerPressure = data.layerPressure || this.getLayerPressureState();
+      this.layerArchive = Array.isArray(data.layerArchive) ? data.layerArchive : [];
+      this.layerIndex = Number(data.layerIndex || Math.max(0, this.pyramid.layers.length - 1));
+      this.bestLayer = Number(data.bestLayer || this.layerIndex);
+      this.combo = Number(data.combo || 0);
+      this.gameOver = Boolean(data.gameOver);
+      this.currentObjective = data.currentObjective || this.generateObjective(this.layerIndex);
+      this.objectiveStreak = Number(data.objectiveStreak || 0);
+      this.tutorialStep = Number(data.tutorialStep || 0);
+      this.tutorialComplete = Boolean(data.tutorialComplete);
+      this.upgrades = { ...this.upgrades, ...(data.upgrades || {}) };
+      this.elementXP = data.elementXP ? { ...data.elementXP } : { H: 0, F: 0, S: 0, C: 0, B: 0 };
+      this.currentAffix = data.currentAffix
+        ? (AFFIX_DEFS.find(a => a.id === data.currentAffix.id) || null)
+        : null;
+      this.aiPersonality = data.aiPersonality
+        ? (AI_PERSONALITIES.find(p => p.id === data.aiPersonality.id) || AI_PERSONALITIES[0])
+        : AI_PERSONALITIES[0];
+      this.layerScars = data.layerScars ? { ...data.layerScars } : {};
+      this.lastPlayerVertices = Array.isArray(data.lastPlayerVertices) ? [...data.lastPlayerVertices] : [];
+      return true;
+    } catch (_) { return false; }
+  }
+
+  gameLoop(time) {
+    if (!this.running) return;
+    const dt = Math.min(0.05, (time - this.lastTime) / 1000);
+    this.lastTime = time;
+    this.elapsedTime += dt;
+    this.camera.update(dt);
+    if (!this.camera.isDragging) this.camera.autoRotate(dt * 0.08);
+    this.pyramid.update(dt);
+    this.renderer.render(this.camera, this.pyramid, this, dt);
+    this.ui.update(this);
+    requestAnimationFrame((t) => this.gameLoop(t));
+  }
+
+  getState() {
+    const layer = this.pyramid.currentLayer;
+    return {
+      genome: this.genome,
+      isPlayerTurn: this.isPlayerTurn,
+      selectedVertex: this.selectedVertex,
+      turn: this.turnCount,
+      pressure: this.getLayerPressureState(),
+      layerArchiveCount: this.layerArchive.length,
+      layer: this.layerIndex,
+      vertexCount: layer ? layer.vertexCount : 3,
+      phase: layer ? layer.shapeDef.label : 'Triangle',
+      gameOver: this.gameOver,
+      awaitingStart: this.awaitingStart,
+      bestLayer: this.bestLayer,
+      combo: this.combo,
+      currentObjective: this.currentObjective,
+      tutorialComplete: this.tutorialComplete,
+      upgrades: this.upgrades,
+      upgradeSummary: this.getUpgradeSummary(),
+      unlockedShapes: this.getUnlockedShapeDefs().map(s => s.vertexCount),
+      scores: this.pyramid.currentLayer ? evaluateLayerScores(this.pyramid.currentLayer, null, this.currentAffix, this.getRankBonuses(), this.layerScars) : null,
+      affix: this.currentAffix,
+      aiPersonality: this.aiPersonality,
+      elementXP: { ...this.elementXP },
+      layerScars: { ...this.layerScars },
+    };
+  }
+}
+//=== bootstrap ===
+window.addEventListener("DOMContentLoaded", function() {
+  try {
+    var GAME = new CyclusPrime();
+    window._game = GAME;
+    setTimeout(function() { GAME.init(); var ls = document.getElementById("loadingScreen"); if (ls) ls.classList.add("hidden"); }, 300);
+  } catch(e) {
+    var ls = document.getElementById("loadingScreen");
+    if (ls) { ls.innerHTML = "<div style=\"color:#ff4466;font-size:14px\">Error: " + e.message + "</div>"; }
+    console.error(e);
+  }
 });
+</script>
+
+  <script>
+    if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('./sw.js').catch(function () {});
+      });
+    }
+  </script>
+</body>
+</html>
+
 
